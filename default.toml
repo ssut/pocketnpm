@@ -1,0 +1,12 @@
+[database]
+path = "npm.db"
+
+[mirror]
+registry = "https://replicate.npmjs.com/registry"
+max_connections = 10
+path = "./registry/"
+
+[server]
+host = "0.0.0.0"
+port = 80
+
