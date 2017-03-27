@@ -1,12 +1,16 @@
 package main
 
 import (
+	"io/ioutil"
 	"os"
+	"path/filepath"
 
+	"github.com/BurntSushi/toml"
 	"github.com/urfave/cli"
 )
 
 func main() {
+	initLogger()
 
 	app := cli.NewApp()
 	app.Name = "pocketnpm"
@@ -33,6 +37,17 @@ func main() {
 				cli.StringFlag{Name: "config, c", Value: "config.toml"},
 			},
 			Action: func(c *cli.Context) error {
+				confPath, _ := filepath.Abs(c.String("config"))
+				b, err := ioutil.ReadFile(confPath)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				var conf PocketConfig
+				if _, err := toml.Decode(string(b), &conf); err != nil {
+					log.Fatalf("Error in config file: %s", err)
+				}
+
 				return nil
 			},
 		},
