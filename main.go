@@ -6,11 +6,14 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/ssut/pocketnpm/db"
+	"github.com/ssut/pocketnpm/log"
+	"github.com/ssut/pocketnpm/npm"
 	"github.com/urfave/cli"
 )
 
 func main() {
-	initLogger()
+	log.InitLogger()
 
 	app := cli.NewApp()
 	app.Name = "pocketnpm"
@@ -30,9 +33,9 @@ func main() {
 			},
 		},
 		{
-			Name:    "run",
-			Aliases: []string{"r"},
-			Usage:   "Run",
+			Name:    "mirror",
+			Aliases: []string{"m"},
+			Usage:   "Run mirroring process",
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "config, c", Value: "config.toml"},
 			},
@@ -48,6 +51,9 @@ func main() {
 					log.Fatalf("Error in config file: %s", err)
 				}
 
+				pb := db.NewPocketBase(&conf.DB)
+				client := npm.NewMirrorClient(pb, &conf.Mirror)
+				client.Run()
 				return nil
 			},
 		},
