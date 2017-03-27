@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,6 +20,20 @@ func main() {
 	app.Name = "pocketnpm"
 	app.Usage = "A simple but fast npm mirror client & server"
 	app.Version = Version
+	app.Flags = []cli.Flag{
+		cli.BoolFlag{Name: "debug, d"},
+	}
+	app.EnableBashCompletion = true
+	app.BashComplete = func(c *cli.Context) {
+		fmt.Fprintf(c.App.Writer, "init\nmirror\nserve\n")
+	}
+
+	app.Before = func(c *cli.Context) error {
+		if c.GlobalBool("debug") {
+			log.SetDebug()
+		}
+		return nil
+	}
 
 	app.Commands = []cli.Command{
 		{

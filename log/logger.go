@@ -13,6 +13,14 @@ func InitLogger() {
 	logger.Formatter = formatter
 }
 
+func SetDebug() {
+	logger.Level = logrus.DebugLevel
+}
+
+func WithFields(fields logrus.Fields) *logrus.Entry {
+	return logger.WithFields(fields)
+}
+
 func Print(args ...interface{}) {
 	logger.Print(args...)
 }
