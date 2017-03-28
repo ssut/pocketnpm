@@ -81,6 +81,11 @@ func (w *MirrorWorker) Start() {
 				}
 
 				// download all files here
+				var result = make(map[string]bool, len(downloads))
+				for _, file := range downloads {
+					result[file.Path] = w.npmClient.Download(file)
+				}
+				log.Debugf("Result for downloads: %v", result)
 
 				w.ResultQueue <- &MirrorWorkResult{
 					Package:  work,

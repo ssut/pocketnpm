@@ -88,12 +88,11 @@ func (c *MirrorClient) Start() {
 	// Result handler
 	go func() {
 		for {
-			result, ok := <-resultQueue
+			_, ok := <-resultQueue
 			if !ok {
 				return
 			}
 
-			log.Print(result)
 		}
 	}()
 
