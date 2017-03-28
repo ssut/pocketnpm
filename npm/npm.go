@@ -78,6 +78,8 @@ func (c *NPMClient) GetDocument(id string) string {
 	var statusCode int
 	var err error
 
+	// if id starts with "@" then we have to use the default http client
+	// of Go because fasthttp breaks it up
 	if strings.HasPrefix(id, "@") {
 		u.Path = fmt.Sprintf("%s/%s", u.Path, strings.Replace(id, "/", "%2F", 1))
 		docURL = strings.Replace(u.String(), "%25", "%", -1)

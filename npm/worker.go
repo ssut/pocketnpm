@@ -15,7 +15,7 @@ import (
 
 var (
 	// ExpRegistryFile defines the URL format for registry file
-	ExpRegistryFile = regexp.MustCompile(`"(?P<url>http:\/\/registry.npmjs.org([a-zA-Z0-9.\-_\/]+))"`)
+	ExpRegistryFile = regexp.MustCompile(`"(http:\/\/registry.npmjs.org\/([a-zA-Z0-9.\-_\/\@]+))"`)
 )
 
 // MirrorWorker contains channels used to act as a worker
