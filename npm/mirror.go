@@ -3,6 +3,7 @@ package npm
 import (
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
@@ -67,7 +68,54 @@ func (c *MirrorClient) FirstRun() {
 func (c *MirrorClient) Start() {
 	// Load all packages with its revision
 	packages := c.db.GetImcompletePackages()
-	log.Print(packages[0])
+
+	// Array of workers
+	var workers = make([]*MirrorWorker, 10)
+	// Initialize channels
+	var workQueue = make(chan *db.BarePackage)
+	var workerQueue = make(chan chan *db.BarePackage, c.config.MaxConnections)
+	// WaitGroup
+	var wg sync.WaitGroup
+
+	// Create mirror workers
+	for i := 0; i < c.config.MaxConnections; i++ {
+		log.Debugf("Starting worker: %d", i)
+		workers[i] = NewMirrorWorker(i, workerQueue, &wg)
+		workers[i].Start()
+	}
+
+	// Start dispatcher
+	go func() {
+		for {
+			select {
+			case work := <-workQueue:
+				// here we received a work request
+				go func(work *db.BarePackage) {
+					worker := <-workerQueue
+
+					// dispatch work request
+					worker <- work
+				}(work)
+			}
+		}
+	}()
+
+	// Dispatch all packages
+	for _, pkg := range packages {
+		wg.Add(1)
+		workQueue <- pkg
+	}
+
+	// Wait for jobs to be finished
+	wg.Wait()
+
+	// Wait for all workers complete
+	for _, worker := range workers {
+		wg.Add(1)
+		worker.Stop()
+	}
+	wg.Wait()
+	log.Info("Done")
 }
 
 func (c *MirrorClient) Run() {
