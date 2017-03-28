@@ -99,7 +99,7 @@ func (c *MirrorClient) Start() {
 					"sameRev": result.Package.Revision == result.DocumentRevision,
 					"files":   len(result.Files),
 					"worker":  result.WorkerID,
-				}).Debugf("Successfully mirrored: %s", result.Package.ID)
+				}).Infof("Mirrored: %s", result.Package.ID)
 			} else {
 				log.Errorf("Failed to mirror: %s", result.Package.ID)
 			}
@@ -167,6 +167,7 @@ func (c *MirrorClient) Run() {
 			"marked":   markedCount,
 		}).Info("State marked as first run")
 		c.FirstRun()
+		c.Start()
 	}
 
 	if seq > 0 && markedCount < stats.Packages {

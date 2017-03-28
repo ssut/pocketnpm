@@ -73,6 +73,9 @@ func (w *MirrorWorker) Start() {
 				// - put document into the bucket Documents
 				// - put file list into the bucket Files
 				// - mark the package as completed (commit)
+				log.WithFields(logrus.Fields{
+					"worker": w.ID,
+				}).Infof("Mirroring: %s", work.ID)
 				document := w.npmClient.GetDocument(work.ID)
 				downloads := []*url.URL{}
 
