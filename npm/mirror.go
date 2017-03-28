@@ -52,6 +52,7 @@ func (c *MirrorClient) initDocument(allDocs *AllDocsResponse) {
 
 	log.Debug("Putting packages..")
 	c.db.PutPackages(packages)
+	c.db.SetSequence(allDocs.Sequence)
 	log.Debug("Succeed")
 }
 
@@ -61,8 +62,12 @@ func (c *MirrorClient) FirstRun() {
 
 	log.Debug("Store all documents by given properties")
 	c.initDocument(allDocs)
+}
 
-	log.Debug("")
+func (c *MirrorClient) Start() {
+	// Load all packages with its revision
+	packages := c.db.GetImcompletePackages()
+	log.Print(packages[0])
 }
 
 func (c *MirrorClient) Run() {
@@ -84,18 +89,29 @@ func (c *MirrorClient) Run() {
 	}).Debug("Status for database")
 
 	seq := c.db.GetSequence()
+	markedCount := c.db.GetCountOfMarks(true)
+
 	if seq == 0 {
-		log.Debugf("State marked as first run because sequence is zero")
+		log.WithFields(logrus.Fields{
+			"sequence": seq,
+			"marked":   markedCount,
+		}).Info("State marked as first run")
 		c.FirstRun()
-		return
 	}
 
-	markedCount := c.db.GetCountOfMarks(true)
+	if seq > 0 && markedCount < stats.Packages {
+		log.WithFields(logrus.Fields{
+			"sequence": seq,
+			"marked":   markedCount,
+		}).Info("Continue")
+		c.Start()
+	}
+
 	if seq > 0 && markedCount == stats.Packages {
 		log.WithFields(logrus.Fields{
-			"sequence": string(seq),
-			"marked":   string(markedCount),
-		}).Debugf("State marked as run for updates")
+			"sequence": seq,
+			"marked":   markedCount,
+		}).Info("State marked as run for updates")
 	}
 
 }

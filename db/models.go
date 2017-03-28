@@ -1,5 +1,10 @@
 package db
 
+const (
+	MarkIncomplete = "0"
+	MarkComplete   = "1"
+)
+
 // DatabaseConfig defines config for database
 type DatabaseConfig struct {
 	Path string `toml:"path"`

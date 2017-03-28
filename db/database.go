@@ -108,10 +108,22 @@ func (pb *PocketBase) GetSequence() int {
 	return sequence
 }
 
+func (pb *PocketBase) SetSequence(seq int) {
+	pb.db.Update(func(tx *bolt.Tx) error {
+		global := tx.Bucket([]byte("Globals"))
+
+		byteSequence := make([]byte, 4)
+		binary.LittleEndian.PutUint32(byteSequence, uint32(seq))
+		global.Put([]byte("sequence"), byteSequence)
+
+		return nil
+	})
+}
+
 func (pb *PocketBase) GetCountOfMarks(cond bool) int {
-	condition := "0"
+	condition := MarkIncomplete
 	if cond {
-		condition = "1"
+		condition = MarkComplete
 	}
 	count := 0
 
@@ -130,6 +142,33 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 	return count
 }
 
+func (pb *PocketBase) GetImcompletePackages() []*BarePackage {
+	count := pb.GetCountOfMarks(false)
+	packages := make([]*BarePackage, count)
+
+	pb.db.View(func(tx *bolt.Tx) error {
+		packs := tx.Bucket([]byte("Packages"))
+		marks := tx.Bucket([]byte("Marks"))
+
+		i := 0
+		c := marks.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			if string(v) == MarkIncomplete {
+				revision := packs.Get(k)
+				packages[i] = &BarePackage{
+					ID:       string(k),
+					Revision: string(revision),
+				}
+				i++
+			}
+		}
+
+		return nil
+	})
+
+	return packages
+}
+
 func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) error {
 	packages := tx.Bucket([]byte("Packages"))
 	marks := tx.Bucket([]byte("Marks"))
@@ -145,9 +184,9 @@ func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) 
 		return err
 	}
 
-	marked := []byte("0")
+	marked := []byte(MarkIncomplete)
 	if mark {
-		marked = []byte("1")
+		marked = []byte(MarkComplete)
 	}
 	err = marks.Put(key, marked)
 	if err != nil {
