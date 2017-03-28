@@ -74,15 +74,28 @@ func (c *MirrorClient) Start() {
 	// Initialize channels
 	var workQueue = make(chan *db.BarePackage)
 	var workerQueue = make(chan chan *db.BarePackage, c.config.MaxConnections)
+	var resultQueue = make(chan *MirrorWorkResult)
 	// WaitGroup
 	var wg sync.WaitGroup
 
 	// Create mirror workers
 	for i := 0; i < c.config.MaxConnections; i++ {
 		log.Debugf("Starting worker: %d", i)
-		workers[i] = NewMirrorWorker(i, workerQueue, &wg)
+		workers[i] = NewMirrorWorker(i, workerQueue, resultQueue, &wg)
 		workers[i].Start()
 	}
+
+	// Result handler
+	go func() {
+		for {
+			result, ok := <-resultQueue
+			if !ok {
+				return
+			}
+
+			log.Print(result)
+		}
+	}()
 
 	// Start dispatcher
 	go func() {
