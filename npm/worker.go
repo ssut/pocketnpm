@@ -6,6 +6,9 @@ import (
 
 	"regexp"
 
+	"encoding/json"
+
+	"github.com/Sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
 )
@@ -29,9 +32,11 @@ type MirrorWorker struct {
 
 // MirrorWorkResult contains the result of worker action
 type MirrorWorkResult struct {
-	Package  *db.BarePackage
-	Document string
-	Files    []*url.URL
+	Package          *db.BarePackage
+	DocumentRevision string
+	Document         string
+	Files            []*url.URL
+	WorkerID         int
 }
 
 // NewMirrorWorker creates a worker with given parameters
@@ -58,15 +63,24 @@ func (w *MirrorWorker) Start() {
 			select {
 			case work := <-w.Work:
 				// Workflow:
-				// - fetch document from the registry with given name and revision
+				// - fetch document from the registry with given name
+				// - compare the revision with existing revision
+				//   - if it doesnt match, fix it
+				//   - the revision will be updated when updating database content
 				// - parse all urls in the document
 				// - download all packages ends with `.tgz`
 				// then, result handler:
 				// - put document into the bucket Documents
 				// - put file list into the bucket Files
 				// - mark the package as completed (commit)
-				document := w.npmClient.GetDocument(work.ID, work.Revision)
+				document := w.npmClient.GetDocument(work.ID)
 				downloads := []*url.URL{}
+
+				var doc DocumentResponse
+				err := json.Unmarshal([]byte(document), &doc)
+				if err != nil {
+					log.Warnf("Failed to decode JSON document: %s (%v)", work.ID, err)
+				}
 
 				// find possible urls
 				urls := ExpRegistryFile.FindAllStringSubmatch(document, -1)
@@ -81,16 +95,21 @@ func (w *MirrorWorker) Start() {
 				}
 
 				// download all files here
-				var result = make(map[string]bool, len(downloads))
 				for _, file := range downloads {
-					result[file.Path] = w.npmClient.Download(file)
+					result := w.npmClient.Download(file)
+					if !result {
+						log.WithFields(logrus.Fields{
+							"ID": work.ID,
+						}).Warnf("Failed to download: %s", file.Path)
+					}
 				}
-				log.Debugf("Result for downloads: %v", result)
 
 				w.ResultQueue <- &MirrorWorkResult{
-					Package:  work,
-					Document: document,
-					Files:    downloads,
+					Package:          work,
+					DocumentRevision: doc.Revision,
+					Document:         document,
+					Files:            downloads,
+					WorkerID:         w.ID,
 				}
 				w.WaitGroup.Done()
 			case <-w.QuitChan:

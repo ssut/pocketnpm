@@ -33,3 +33,13 @@ type changesResult struct {
 		Revision string `json:"rev"`
 	}
 }
+
+// DocumentResponse defines the form of registry document
+//
+// This omits some fields in the document in order to provide
+// informations that are important for use
+type DocumentResponse struct {
+	ID       string `json:"_id"`
+	Revision string `json:"_rev"`
+	Name     string `json:"name"`
+}

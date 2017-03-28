@@ -1,11 +1,14 @@
 package npm
 
 import (
+	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/valyala/fasthttp"
@@ -67,21 +70,40 @@ func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 	return &resp
 }
 
-func (c *NPMClient) GetDocument(id string, rev string) string {
+func (c *NPMClient) GetDocument(id string) string {
 	u, _ := url.Parse(c.registry)
-	u.Path = path.Join(u.Path, url.PathEscape(id))
-	q := make(url.Values)
-	q.Add("rev", rev)
-	u.RawQuery = q.Encode()
 
-	log.Debugf("Get: %s", u.String())
-	statusCode, body, err := c.httpClient.Get(nil, u.String())
+	var docURL string
+	var body []byte
+	var statusCode int
+	var err error
+
+	if strings.HasPrefix(id, "@") {
+		u.Path = fmt.Sprintf("%s/%s", u.Path, strings.Replace(id, "/", "%2F", 1))
+		docURL = strings.Replace(u.String(), "%25", "%", -1)
+
+		resp, err := http.Get(docURL)
+		if err != nil {
+			log.Error(err)
+			return ""
+		}
+
+		statusCode = resp.StatusCode
+		defer resp.Body.Close()
+		body, err = ioutil.ReadAll(resp.Body)
+	} else {
+		u.Path = path.Join(u.Path, id)
+		docURL = u.String()
+		statusCode, body, err = c.httpClient.Get(nil, docURL)
+	}
+	log.Debugf("Get: %s", docURL)
+
 	if err != nil {
 		log.Error(err)
 		return ""
 	}
 	if statusCode != fasthttp.StatusOK {
-		log.Errorf("Unexpected status code: %d", statusCode)
+		log.Errorf("Unexpected status code: %d (%s)", statusCode, docURL)
 		return ""
 	}
 

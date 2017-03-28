@@ -7,6 +7,11 @@ import (
 
 	"github.com/boltdb/bolt"
 
+	"net/url"
+
+	"bytes"
+	"encoding/gob"
+
 	"github.com/ssut/pocketnpm/log"
 )
 
@@ -210,4 +215,53 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 	if err := tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev string, downloads []*url.URL) bool {
+	tx, _ := pb.db.Begin(true)
+	defer tx.Rollback()
+
+	key := []byte(pack.ID)
+
+	packages := tx.Bucket([]byte("Packages"))
+	documents := tx.Bucket([]byte("Documents"))
+	files := tx.Bucket([]byte("Files"))
+	marks := tx.Bucket([]byte("Marks"))
+
+	// if revision does not match
+	if pack.Revision != rev {
+		err := packages.Put(key, []byte(rev))
+		if err != nil {
+			return false
+		}
+	}
+
+	err := documents.Put(key, []byte(document))
+	if err != nil {
+		return false
+	}
+
+	// encode downloads(interface) directly into a byte array
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err = enc.Encode(downloads)
+	if err != nil {
+		return false
+	}
+
+	err = files.Put(key, buf.Bytes())
+	if err != nil {
+		return false
+	}
+
+	err = marks.Put(key, []byte(MarkComplete))
+	if err != nil {
+		return false
+	}
+
+	if err = tx.Commit(); err != nil {
+		return false
+	}
+
+	return true
 }

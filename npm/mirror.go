@@ -86,15 +86,25 @@ func (c *MirrorClient) Start() {
 	}
 
 	// Result handler
-	go func() {
+	go func(db *db.PocketBase) {
 		for {
-			_, ok := <-resultQueue
-			if !ok {
+			result, done := <-resultQueue
+			if !done {
 				return
 			}
 
+			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, result.Files)
+			if succeed {
+				log.WithFields(logrus.Fields{
+					"sameRev": result.Package.Revision == result.DocumentRevision,
+					"files":   len(result.Files),
+					"worker":  result.WorkerID,
+				}).Debugf("Successfully mirrored: %s", result.Package.ID)
+			} else {
+				log.Errorf("Failed to mirror: %s", result.Package.ID)
+			}
 		}
-	}()
+	}(c.db)
 
 	// Start dispatcher
 	go func() {
