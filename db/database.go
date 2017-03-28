@@ -1,12 +1,13 @@
 package db
 
 import (
-	"log"
 	"path/filepath"
 
 	"encoding/binary"
 
 	"github.com/boltdb/bolt"
+
+	"github.com/ssut/pocketnpm/log"
 )
 
 // PocketBase type is a frontend for BoltDB
@@ -70,4 +71,104 @@ func (pb *PocketBase) IsInitialized() bool {
 	})
 
 	return initialized
+}
+
+func (pb *PocketBase) GetItemCount(name string) int {
+	var count int
+	pb.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(name))
+		count = b.Stats().KeyN
+
+		return nil
+	})
+
+	return count
+}
+
+func (pb *PocketBase) GetStats() *DatabaseStats {
+	stats := &DatabaseStats{
+		Packages:  pb.GetItemCount("Packages"),
+		Marks:     pb.GetItemCount("Marks"),
+		Documents: pb.GetItemCount("Documents"),
+		Files:     pb.GetItemCount("Files"),
+	}
+
+	return stats
+}
+
+func (pb *PocketBase) GetSequence() int {
+	sequence := 0
+	pb.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("Globals"))
+		v := b.Get([]byte("sequence"))
+		sequence = int(binary.LittleEndian.Uint32(v))
+		return nil
+	})
+
+	return sequence
+}
+
+func (pb *PocketBase) GetCountOfMarks(cond bool) int {
+	condition := "0"
+	if cond {
+		condition = "1"
+	}
+	count := 0
+
+	pb.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("Marks"))
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			if string(v) == condition {
+				count++
+			}
+		}
+		return nil
+	})
+
+	return count
+}
+
+func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) error {
+	packages := tx.Bucket([]byte("Packages"))
+	marks := tx.Bucket([]byte("Marks"))
+	key := []byte(id)
+
+	// Check if package's already exists
+	if value := packages.Get(key); value != nil {
+		return nil
+	}
+
+	err := packages.Put(key, []byte(rev))
+	if err != nil {
+		return err
+	}
+
+	marked := []byte("0")
+	if mark {
+		marked = []byte("1")
+	}
+	err = marks.Put(key, marked)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
+	tx, _ := pb.db.Begin(true)
+	defer tx.Rollback()
+
+	for _, doc := range allDocs {
+		err := pb.PutPackage(tx, doc.ID, doc.Revision, false)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Fatal(err)
+	}
 }

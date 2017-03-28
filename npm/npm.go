@@ -34,33 +34,37 @@ func NewNPMClient(registry string) *NPMClient {
 func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, "_all_docs")
-	q := new(url.Values)
+	q := make(url.Values)
 	q.Add("update_seq", "true")
 	u.RawQuery = q.Encode()
 
+	log.Debugf("Get: %s", u.String())
 	statusCode, body, err := c.httpClient.Get(nil, u.String())
 	if err != nil {
-		log.Error(err)
+		log.Fatal(err)
 		return nil
 	}
 	if statusCode != fasthttp.StatusOK {
-		log.Errorf("Unexpected status code: %d", statusCode)
+		log.Fatalf("Unexpected status code: %d", statusCode)
 		return nil
 	}
 
-	var resp *AllDocsResponse
-	if err := json.Unmarshal(body, resp); err != nil {
-		log.Errorf("Could not decode JSON data: %s", err)
+	log.Debugf("Unmarshaling the entire document (%d B)", len(body))
+	var resp AllDocsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		log.Print(err)
+		log.Fatalf("Could not decode JSON data: %s", err)
 		return nil
 	}
 
-	return resp
+	return &resp
 }
 
 func (c *NPMClient) GetDocument(id string) string {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, url.PathEscape(id))
 
+	log.Debugf("Get: %s", u.String())
 	statusCode, body, err := c.httpClient.Get(nil, u.String())
 	if err != nil {
 		log.Error(err)
@@ -77,10 +81,11 @@ func (c *NPMClient) GetDocument(id string) string {
 func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, "_changes")
-	q := new(url.Values)
+	q := make(url.Values)
 	q.Add("since", string(seq))
 	u.RawQuery = q.Encode()
 
+	log.Debugf("Get: %s", u.String())
 	statusCode, body, err := c.httpClient.Get(nil, u.String())
 	if err != nil {
 		log.Error(err)
@@ -91,11 +96,11 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 		return nil
 	}
 
-	var resp *ChangesResponse
-	if err := json.Unmarshal(body, resp); err != nil {
+	var resp ChangesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
 		log.Errorf("Could not decode JSON data: %s", err)
 		return nil
 	}
 
-	return resp
+	return &resp
 }
