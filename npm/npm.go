@@ -1,7 +1,12 @@
 package npm
 
 import (
+	"io"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/valyala/fasthttp"
 
@@ -15,9 +20,10 @@ import (
 type NPMClient struct {
 	httpClient *fasthttp.Client
 	registry   string
+	path       string
 }
 
-func NewNPMClient(registry string) *NPMClient {
+func NewNPMClient(registry string, path string) *NPMClient {
 	httpClient := &fasthttp.Client{
 		Name: "PocketNPM Client",
 	}
@@ -25,6 +31,7 @@ func NewNPMClient(registry string) *NPMClient {
 	client := &NPMClient{
 		httpClient: httpClient,
 		registry:   registry,
+		path:       path,
 	}
 
 	return client
@@ -60,9 +67,12 @@ func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 	return &resp
 }
 
-func (c *NPMClient) GetDocument(id string) string {
+func (c *NPMClient) GetDocument(id string, rev string) string {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, url.PathEscape(id))
+	q := make(url.Values)
+	q.Add("rev", rev)
+	u.RawQuery = q.Encode()
 
 	log.Debugf("Get: %s", u.String())
 	statusCode, body, err := c.httpClient.Get(nil, u.String())
@@ -103,4 +113,49 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	}
 
 	return &resp
+}
+
+func (c *NPMClient) Download(url *url.URL) bool {
+	path := filepath.Join(c.path, url.Path)
+	err := os.MkdirAll(filepath.Dir(path), 0755)
+	if err != nil {
+		log.Fatalf("Directory is not writable: %s (%q)", path, err)
+	}
+
+	out, err := os.Create(path)
+	if err != nil {
+		log.Fatalf("Failed to create a file: %s (%q)", path, err)
+	}
+	defer out.Close()
+
+	var resp *http.Response
+	tries := 0
+	for {
+		tries++
+		resp, err = http.Get(url.String())
+		if err != nil {
+			log.Warnf("HTTP error: %q", err)
+		} else {
+			tries = -1
+		}
+
+		if tries == -1 {
+			break
+		} else if tries >= 3 {
+			log.Fatalf("HTTP error")
+			break
+		} else {
+			time.Sleep(time.Second)
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		size := resp.ContentLength
+		n, _ := io.Copy(out, resp.Body)
+
+		return size == n
+	}
+
+	return false
 }

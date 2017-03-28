@@ -31,7 +31,7 @@ func NewMirrorClient(db *db.PocketBase, config *MirrorConfig) *MirrorClient {
 		}
 	}
 
-	npmClient := NewNPMClient(config.Registry)
+	npmClient := NewNPMClient(config.Registry, config.Path)
 	client := &MirrorClient{
 		config:    config,
 		db:        db,
@@ -81,7 +81,7 @@ func (c *MirrorClient) Start() {
 	// Create mirror workers
 	for i := 0; i < c.config.MaxConnections; i++ {
 		log.Debugf("Starting worker: %d", i)
-		workers[i] = NewMirrorWorker(i, workerQueue, resultQueue, &wg)
+		workers[i] = NewMirrorWorker(i, c.npmClient, workerQueue, resultQueue, &wg)
 		workers[i].Start()
 	}
 
