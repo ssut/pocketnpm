@@ -3,8 +3,10 @@ path = "npm.db"
 
 [mirror]
 registry = "https://replicate.npmjs.com/registry"
-max_connections = 10
+concurrency = 10
 path = "./registry/"
+# interval for updates
+interval = 120
 
 [server]
 host = "0.0.0.0"

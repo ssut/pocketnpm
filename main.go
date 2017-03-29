@@ -44,6 +44,19 @@ func main() {
 				cli.StringFlag{Name: "path, p", Value: "config.toml"},
 			},
 			Action: func(c *cli.Context) error {
+				path, _ := filepath.Abs(c.String("path"))
+				out, err := os.Create(path)
+				if err != nil {
+					log.Fatal(err)
+				}
+				defer out.Close()
+
+				defaultToml, _ := defaultTomlBytes()
+				_, err = out.Write(defaultToml)
+				if err != nil {
+					log.Fatal(err)
+				}
+
 				return nil
 			},
 		},

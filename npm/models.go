@@ -2,8 +2,9 @@ package npm
 
 type MirrorConfig struct {
 	Registry       string `toml:"registry"`
-	MaxConnections int    `toml:"max_connections"`
+	MaxConnections int    `toml:"concurrency"`
 	Path           string `toml:"path"`
+	Interval       int    `toml:"interval"`
 }
 
 type AllDocsResponse struct {
