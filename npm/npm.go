@@ -46,7 +46,7 @@ func (c *NPMClient) attemptGet(url string, maxAttempts int, returnStream bool) (
 	for {
 		attempts++
 
-		if returnStream || strings.HasPrefix(url, "%") {
+		if returnStream || strings.Contains(url, "%") {
 			resp, err = http.Get(url)
 			if err != nil {
 				log.Error(err)
