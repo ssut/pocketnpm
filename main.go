@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/BurntSushi/toml"
 	"github.com/ssut/pocketnpm/db"
@@ -22,16 +22,19 @@ func main() {
 	app.Version = Version
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{Name: "debug, d"},
+		cli.IntFlag{Name: "cpus", Value: runtime.NumCPU()},
 	}
 	app.EnableBashCompletion = true
-	app.BashComplete = func(c *cli.Context) {
-		fmt.Fprintf(c.App.Writer, "init\nmirror\nserve\n")
-	}
 
 	app.Before = func(c *cli.Context) error {
 		if c.GlobalBool("debug") {
 			log.SetDebug()
+			log.Debug("Activated debug mode")
 		}
+
+		cpus := c.GlobalInt("cpus")
+		runtime.GOMAXPROCS(cpus)
+
 		return nil
 	}
 
