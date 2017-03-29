@@ -15,7 +15,7 @@ import (
 
 var (
 	// ExpRegistryFile defines the URL format for registry file
-	ExpRegistryFile = regexp.MustCompile(`"(http:\/\/registry.npmjs.org\/([a-zA-Z0-9.\-_\/\@]+))"`)
+	ExpRegistryFile = regexp.MustCompile(`"tarball":\s?"((https?):\/\/([\w0-9\.]+)\/([a-zA-Z0-9.\-_\/\@]+\.tgz))"`)
 )
 
 // MirrorWorker contains channels used to act as a worker
@@ -88,10 +88,10 @@ func (w *MirrorWorker) Start() {
 				// find possible urls
 				urls := ExpRegistryFile.FindAllStringSubmatch(document, -1)
 				for _, u := range urls {
-					path := u[len(u)-1]
+					scheme, host, path := u[2], u[3], u[4]
 					download := &url.URL{
-						Scheme: "https",
-						Host:   "registry.npmjs.org",
+						Scheme: scheme,
+						Host:   host,
 						Path:   path,
 					}
 					downloads = append(downloads, download)
