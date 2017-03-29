@@ -140,7 +140,7 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 }
 
 func (c *NPMClient) Download(url *url.URL) bool {
-	path := filepath.Join(c.path, url.Path)
+	path := getLocalPath(c.path, url.Path)
 	err := os.MkdirAll(filepath.Dir(path), 0755)
 	if err != nil {
 		log.Fatalf("Directory is not writable: %s (%q)", path, err)
