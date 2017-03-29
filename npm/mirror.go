@@ -70,7 +70,7 @@ func (c *MirrorClient) Start() {
 	packages := c.db.GetImcompletePackages()
 
 	// Array of workers
-	var workers = make([]*MirrorWorker, 10)
+	var workers = make([]*MirrorWorker, c.config.MaxConnections)
 	// Initialize channels
 	var workQueue = make(chan *db.BarePackage)
 	var workerQueue = make(chan chan *db.BarePackage, c.config.MaxConnections)
