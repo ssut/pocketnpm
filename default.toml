@@ -3,12 +3,16 @@ path = "npm.db"
 
 [mirror]
 registry = "https://replicate.npmjs.com/registry"
-concurrency = 10
+concurrency = 20
 path = "./registry/"
 # interval for updates
 interval = 120
 
 [server]
-host = "0.0.0.0"
+bind = "0.0.0.0"
 port = 80
-
+# host defines tarball urls (host of registry.npmjs.org/package/-/package-version.tgz)
+host = "localhost"
+# send X-Accel-Redirect header to clients such as nginx and apache.
+# see: https://www.nginx.com/resources/wiki/start/topics/examples/x-accel/
+x_accel_redirect = false
