@@ -115,10 +115,8 @@ func (c *MirrorClient) Start() {
 				// here we received a work request
 				// goroutine won't be created until the acquired worker is released
 				worker := <-workerQueue
-				go func(work *db.BarePackage) {
-					// dispatch work request
-					worker <- work
-				}(work)
+				// dispatch work request
+				worker <- work
 			}
 		}
 	}()
