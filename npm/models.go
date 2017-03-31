@@ -7,6 +7,13 @@ type MirrorConfig struct {
 	Interval       int    `toml:"interval"`
 }
 
+type ServerConfig struct {
+	Bind         string `toml:"bind"`
+	Host         string `toml:"host"`
+	Port         int    `toml:"port"`
+	EnableXAccel bool   `toml:"x_accel_redirect"`
+}
+
 type AllDocsResponse struct {
 	TotalRows int       `json:"total_rows"`
 	Offset    int       `json:"offset"`

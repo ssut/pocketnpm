@@ -16,6 +16,22 @@ import (
 	"github.com/urfave/cli"
 )
 
+func getConfig(path string) *PocketConfig {
+	confPath, _ := filepath.Abs(path)
+	b, err := ioutil.ReadFile(confPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var conf PocketConfig
+	if _, err := toml.Decode(string(b), &conf); err != nil {
+		log.Fatalf("Error in config file: %s", err)
+
+	}
+
+	return &conf
+}
+
 func main() {
 	log.InitLogger()
 
@@ -80,20 +96,26 @@ func main() {
 				cli.StringFlag{Name: "config, c", Value: "config.toml"},
 			},
 			Action: func(c *cli.Context) error {
-				confPath, _ := filepath.Abs(c.String("config"))
-				b, err := ioutil.ReadFile(confPath)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				var conf PocketConfig
-				if _, err := toml.Decode(string(b), &conf); err != nil {
-					log.Fatalf("Error in config file: %s", err)
-				}
+				conf := getConfig(c.String("config"))
 
 				pb := db.NewPocketBase(&conf.DB)
 				client := npm.NewMirrorClient(pb, &conf.Mirror)
 				client.Run()
+				return nil
+			},
+		},
+		{
+			Name:    "serve",
+			Aliases: []string{"s"},
+			Flags: []cli.Flag{
+				cli.StringFlag{Name: "config, c", Value: "config.toml"},
+			},
+			Action: func(c *cli.Context) error {
+				conf := getConfig(c.String("config"))
+
+				pb := db.NewPocketBase(&conf.DB)
+				server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
+				server.Run()
 				return nil
 			},
 		},
