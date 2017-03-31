@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/BurntSushi/toml"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
@@ -22,6 +25,7 @@ func main() {
 	app.Version = Version
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{Name: "debug, d"},
+		cli.BoolFlag{Name: "profile, p", Usage: "activate pprof on port 18080 for profiling goroutines"},
 		cli.IntFlag{Name: "cpus", Value: runtime.NumCPU()},
 	}
 	app.EnableBashCompletion = true
@@ -30,6 +34,11 @@ func main() {
 		if c.GlobalBool("debug") {
 			log.SetDebug()
 			log.Debug("Activated debug mode")
+		}
+
+		if c.GlobalBool("profile") {
+			log.Info("Starting pprof server on port 18080")
+			go http.ListenAndServe("localhost:18080", nil)
 		}
 
 		cpus := c.GlobalInt("cpus")
