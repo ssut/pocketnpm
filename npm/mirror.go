@@ -72,7 +72,8 @@ func (c *MirrorClient) Start() {
 	// Array of workers
 	var workers = make([]*MirrorWorker, c.config.MaxConnections)
 	// Initialize channels
-	var workQueue = make(chan *db.BarePackage)
+	// workQueue has a buffer size of 100
+	var workQueue = make(chan *db.BarePackage, 100)
 	var workerQueue = make(chan chan *db.BarePackage, c.config.MaxConnections)
 	var resultQueue = make(chan *MirrorWorkResult)
 	// WaitGroup
@@ -112,9 +113,9 @@ func (c *MirrorClient) Start() {
 			select {
 			case work := <-workQueue:
 				// here we received a work request
+				// goroutine won't be created until the acquired worker is released
+				worker := <-workerQueue
 				go func(work *db.BarePackage) {
-					worker := <-workerQueue
-
 					// dispatch work request
 					worker <- work
 				}(work)
@@ -127,6 +128,7 @@ func (c *MirrorClient) Start() {
 		wg.Add(1)
 		workQueue <- pkg
 	}
+	log.Debug("Successfully dispatched all queues")
 
 	// Wait for jobs to be finished
 	wg.Wait()
