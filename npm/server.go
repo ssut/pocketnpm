@@ -43,9 +43,17 @@ func (server *PocketServer) Run() {
 }
 
 func (server *PocketServer) addRoutes() {
+	server.router.GET("/", server.getIndex)
 	server.router.GET("/:name", server.getDocument)
 	server.router.GET("/:name/:version", server.getDocumentByVersion)
 	server.router.GET("/:name/:version/:tarball", server.downloadPackage)
+	server.router.NotFound = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "{}")
+	})
+}
+
+func (server *PocketServer) getIndex(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+
 }
 
 func (server *PocketServer) getDocument(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
