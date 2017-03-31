@@ -140,7 +140,7 @@ func (c *MirrorClient) Start() {
 	log.Info("Done")
 }
 
-func (c *MirrorClient) Run() {
+func (c *MirrorClient) Run(onetime bool) {
 	if !c.db.IsInitialized() {
 		log.Debug("Database has not been initialized. Init..")
 		c.db.Init()
@@ -159,16 +159,17 @@ func (c *MirrorClient) Run() {
 	}).Debug("Status for database")
 
 	seq := c.db.GetSequence()
-	markedCount := c.db.GetCountOfMarks(true)
 
 	if seq == 0 {
 		log.WithFields(logrus.Fields{
 			"sequence": seq,
-			"marked":   markedCount,
+			"marked":   0,
 		}).Info("State marked as first run")
 		c.FirstRun()
 		c.Start()
 	}
+
+	markedCount := c.db.GetCountOfMarks(true)
 
 	if seq > 0 && markedCount < stats.Packages {
 		log.WithFields(logrus.Fields{
@@ -176,6 +177,10 @@ func (c *MirrorClient) Run() {
 			"marked":   markedCount,
 		}).Info("Continue")
 		c.Start()
+	}
+
+	if onetime {
+		return
 	}
 
 	if seq > 0 && markedCount == stats.Packages {

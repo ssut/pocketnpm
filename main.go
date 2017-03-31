@@ -89,33 +89,28 @@ func main() {
 			},
 		},
 		{
-			Name:    "mirror",
-			Aliases: []string{"m"},
-			Usage:   "Run mirroring process",
-			Flags: []cli.Flag{
-				cli.StringFlag{Name: "config, c", Value: "config.toml"},
-			},
-			Action: func(c *cli.Context) error {
-				conf := getConfig(c.String("config"))
-
-				pb := db.NewPocketBase(&conf.DB)
-				client := npm.NewMirrorClient(pb, &conf.Mirror)
-				client.Run()
-				return nil
-			},
-		},
-		{
-			Name:    "serve",
+			Name:    "start",
 			Aliases: []string{"s"},
+			Usage:   "Start PocketNPM with continuous mirroring mode",
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "config, c", Value: "config.toml"},
+				cli.BoolFlag{Name: "onetime, o", Usage: "One-time mirroring (disable continuous mirroring)"},
+				cli.BoolFlag{Name: "server, s", Usage: "start NPM registry server"},
 			},
 			Action: func(c *cli.Context) error {
 				conf := getConfig(c.String("config"))
 
+				// global database frontend
 				pb := db.NewPocketBase(&conf.DB)
-				server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
-				server.Run()
+
+				// webserver
+				if c.Bool("server") {
+					server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
+					go server.Run()
+				}
+
+				client := npm.NewMirrorClient(pb, &conf.Mirror)
+				client.Run(c.Bool("onetime"))
 				return nil
 			},
 		},
