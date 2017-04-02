@@ -1,5 +1,8 @@
 [database]
+# database path (bolt)
 path = "npm.db"
+# max in-memory cache size in MB (0 = unlimited)
+max_cache_size = 2048
 
 [mirror]
 registry = "https://replicate.npmjs.com/registry"

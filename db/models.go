@@ -7,7 +7,8 @@ const (
 
 // DatabaseConfig defines config for database
 type DatabaseConfig struct {
-	Path string `toml:"path"`
+	Path         string `toml:"path"`
+	MaxCacheSize int    `toml:"max_cache_size"`
 }
 
 // DatabaseStats represents the count of each bucket
