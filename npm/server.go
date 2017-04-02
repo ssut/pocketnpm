@@ -4,24 +4,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/julienschmidt/httprouter"
+	"github.com/buaazp/fasthttprouter"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
+	"github.com/valyala/fasthttp"
 )
 
+// PocketServer type contains essential shared items to run a npm server
 type PocketServer struct {
 	db           *db.PocketBase
 	serverConfig *ServerConfig
 	mirrorConfig *MirrorConfig
-	router       *httprouter.Router
+	router       *fasthttprouter.Router
 }
 
+// NewPocketServer initializes new instance of PocketServer
 func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig *MirrorConfig) *PocketServer {
 	mirrorConfig.Path, _ = filepath.Abs(mirrorConfig.Path)
 	if _, err := os.Stat(mirrorConfig.Path); os.IsNotExist(err) {
@@ -32,7 +34,7 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 		db:           db,
 		serverConfig: serverConfig,
 		mirrorConfig: mirrorConfig,
-		router:       httprouter.New(),
+		router:       fasthttprouter.New(),
 	}
 	server.addRoutes()
 
@@ -43,7 +45,7 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 func (server *PocketServer) Run() {
 	addr := fmt.Sprintf("%s:%d", server.serverConfig.Bind, server.serverConfig.Port)
 	log.Infof("Listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, server.router))
+	log.Fatal(fasthttp.ListenAndServe(addr, server.router.Handler))
 }
 
 func (server *PocketServer) addRoutes() {
@@ -51,43 +53,41 @@ func (server *PocketServer) addRoutes() {
 	server.router.GET("/:name", server.getDocument)
 	server.router.GET("/:name/:version", server.getDocumentByVersion)
 	server.router.GET("/:name/:version/:tarball", server.downloadPackage)
-	server.router.NotFound = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		server.raiseNotFound(w)
-	})
+	server.router.NotFound = server.raiseNotFound
 }
 
-func (server *PocketServer) raiseNotFound(w http.ResponseWriter) {
-	w.WriteHeader(404)
-	w.Write([]byte("{}"))
+func (server *PocketServer) raiseNotFound(ctx *fasthttp.RequestCtx) {
+	ctx.SetStatusCode(404)
+	ctx.Write([]byte("{}"))
 }
 
-func (server *PocketServer) writeJson(w http.ResponseWriter, content interface{}) {
+func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interface{}) {
 	json, err := json.Marshal(content)
 	if err != nil {
-		w.WriteHeader(500)
+		ctx.SetStatusCode(500)
 		return
 	}
-	w.Write(json)
+	ctx.Write(json)
 }
 
-func (server *PocketServer) sendFile(w http.ResponseWriter, path string, name string) {
+func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name string) {
 	open, err := os.Open(path)
 	defer open.Close()
 	if err != nil {
 		log.Debug(err)
-		http.Error(w, "File not found", 404)
+		ctx.SetStatusCode(404)
 		return
 	}
 
 	stat, _ := open.Stat()
 	size := strconv.FormatInt(stat.Size(), 10)
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", size)
+	ctx.SetContentType("application/octet-stream")
+	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	ctx.Response.Header.Set("Content-Length", size)
 
 	open.Seek(0, 0)
-	io.Copy(w, open)
+	io.Copy(ctx, open)
 }
 
 func (server *PocketServer) replaceAttachments(document string) string {
@@ -104,7 +104,7 @@ func (server *PocketServer) replaceAttachments(document string) string {
 	return document
 }
 
-func (server *PocketServer) getIndex(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
 	stat := server.db.GetStats()
 	markedCount := server.db.GetCountOfMarks(true)
 	output := map[string]interface{}{
@@ -112,48 +112,48 @@ func (server *PocketServer) getIndex(w http.ResponseWriter, r *http.Request, ps 
 		"available": markedCount,
 	}
 
-	server.writeJson(w, &output)
+	server.writeJSON(ctx, &output)
 }
 
-func (server *PocketServer) getDocument(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	name := ps.ByName("name")
+func (server *PocketServer) getDocument(ctx *fasthttp.RequestCtx) {
+	name := ctx.UserValue("name").(string)
 	doc, _, err := server.db.GetDocument(name, false)
 	if err != nil {
-		server.writeJson(w, map[string]string{
+		server.writeJSON(ctx, map[string]string{
 			"error": err.Error(),
 		})
 	}
 	doc = server.replaceAttachments(doc)
 	size := strconv.FormatInt(int64(len(doc)), 10)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", size)
-	fmt.Fprint(w, doc)
+	ctx.SetContentType("application/json")
+	ctx.Response.Header.Set("Content-Length", size)
+	fmt.Fprint(ctx, doc)
 }
 
-func (server *PocketServer) getDocumentByVersion(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
 
 }
 
-func (server *PocketServer) downloadPackage(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-	if ps.ByName("version") != "-" {
-		server.raiseNotFound(w)
+func (server *PocketServer) downloadPackage(ctx *fasthttp.RequestCtx) {
+	if ctx.UserValue("version") != "-" {
+		server.raiseNotFound(ctx)
 		return
 	}
-	name, tarball := ps.ByName("name"), ps.ByName("tarball")
+	name, tarball := ctx.UserValue("name").(string), ctx.UserValue("tarball").(string)
 	// Illegal access
 	if strings.Contains(name, "..") || strings.Contains(tarball, "..") {
-		server.raiseNotFound(w)
+		server.raiseNotFound(ctx)
 		return
 	}
 
-	path := fmt.Sprintf("%s/-/%s", ps.ByName("name"), ps.ByName("tarball"))
+	path := fmt.Sprintf("%s/-/%s", name, tarball)
 	local := getLocalPath(server.mirrorConfig.Path, path)
 	// Illegal access
 	if !strings.Contains(local, server.mirrorConfig.Path) {
-		server.raiseNotFound(w)
+		server.raiseNotFound(ctx)
 		return
 	}
 
-	server.sendFile(w, local, tarball)
+	server.sendFile(ctx, local, tarball)
 }
