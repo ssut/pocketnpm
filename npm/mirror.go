@@ -87,7 +87,7 @@ func (c *MirrorClient) Start() {
 	}
 
 	// Result handler
-	go func(db *db.PocketBase) {
+	go func(db *db.PocketBase, wg *sync.WaitGroup) {
 		for {
 			result, done := <-resultQueue
 			if !done {
@@ -95,6 +95,7 @@ func (c *MirrorClient) Start() {
 			}
 
 			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, result.Files)
+			wg.Done()
 			if succeed {
 				log.WithFields(logrus.Fields{
 					"sameRev": result.Package.Revision == result.DocumentRevision,
@@ -105,7 +106,7 @@ func (c *MirrorClient) Start() {
 				log.Errorf("Failed to mirror: %s", result.Package.ID)
 			}
 		}
-	}(c.db)
+	}(c.db, &wg)
 
 	// Start dispatcher
 	go func() {
@@ -191,6 +192,9 @@ func (c *MirrorClient) Run(onetime bool) {
 			"sequence": seq,
 			"marked":   markedCount,
 		}).Info("State marked as run for updates")
+
+		exit := make(chan struct{}, 1)
+		<-exit
 	}
 
 }

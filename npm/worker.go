@@ -118,7 +118,6 @@ func (w *MirrorWorker) Start() {
 					Files:            downloads,
 					WorkerID:         w.ID,
 				}
-				w.WaitGroup.Done()
 			case <-w.QuitChan:
 				log.Printf("Worker %d Stopping", w.ID)
 				w.WaitGroup.Done()
