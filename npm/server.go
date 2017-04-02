@@ -86,6 +86,12 @@ func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name
 	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	ctx.Response.Header.Set("Content-Length", size)
 
+	if server.serverConfig.EnableXAccel {
+		internalPath := strings.Replace(path, server.mirrorConfig.Path, "/_internal", 1)
+		ctx.Response.Header.Set("X-Accel-Redirect", internalPath)
+		return
+	}
+
 	open.Seek(0, 0)
 	io.Copy(ctx, open)
 }
