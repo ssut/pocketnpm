@@ -1,6 +1,8 @@
 package db
 
 import (
+	"errors"
+	"fmt"
 	"path/filepath"
 
 	"encoding/binary"
@@ -176,6 +178,47 @@ func (pb *PocketBase) GetImcompletePackages() []*BarePackage {
 	})
 
 	return packages
+}
+
+func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, filelist []*url.URL, err error) {
+	document = "{}"
+	filelist = nil
+
+	key := []byte(id)
+
+	pb.db.View(func(tx *bolt.Tx) error {
+		documents := tx.Bucket([]byte("Documents"))
+		marks := tx.Bucket([]byte("Marks"))
+		files := tx.Bucket([]byte("Files"))
+
+		mark := marks.Get(key)
+		if mark == nil {
+			err = errors.New("Package does not exist")
+			return nil
+		}
+
+		if string(mark) == MarkIncomplete {
+			err = errors.New("Package has not been downloaded yet")
+			return nil
+		}
+
+		document = string(documents.Get(key))
+
+		if withfiles {
+			var buf bytes.Buffer
+			buf.Write(files.Get(key))
+			dec := gob.NewDecoder(&buf)
+			decerr := dec.Decode(&filelist)
+			if decerr != nil {
+				err = errors.New(fmt.Sprintf("Internal error: %v", decerr))
+				return nil
+			}
+		}
+
+		return nil
+	})
+
+	return
 }
 
 func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) error {
