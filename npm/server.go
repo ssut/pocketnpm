@@ -124,8 +124,11 @@ func (server *PocketServer) getDocument(w http.ResponseWriter, r *http.Request, 
 		})
 	}
 	doc = server.replaceAttachments(doc)
+	size := strconv.FormatInt(int64(len(doc)), 10)
 
-	fmt.Fprintf(w, doc)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", size)
+	fmt.Fprint(w, doc)
 }
 
 func (server *PocketServer) getDocumentByVersion(w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
