@@ -98,6 +98,10 @@ func (w *MirrorWorker) Start() {
 				}
 
 				// download all files here
+				log.WithFields(logrus.Fields{
+					"name":   work.ID,
+					"worker": w.ID,
+				}).Debugf("Total files to download: %d", len(downloads))
 				for _, file := range downloads {
 					result := w.npmClient.Download(file)
 					if !result {

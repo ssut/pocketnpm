@@ -182,9 +182,16 @@ func (c *NPMClient) Download(url *url.URL) bool {
 		log.Fatalf("Directory is not writable: %s (%q)", path, err)
 	}
 
-	out, err := os.Create(path)
+	var out *os.File
+	_, err = os.Stat(path)
+
 	if err != nil {
-		log.Fatalf("Failed to create a file: %s (%q)", path, err)
+		out, err = os.Create(path)
+		if err != nil {
+			log.Fatalf("Failed to create a file: %s (%q)", path, err)
+		}
+	} else {
+		out, err = os.OpenFile(path, os.O_RDWR, 0666)
 	}
 	defer out.Close()
 
@@ -193,8 +200,12 @@ func (c *NPMClient) Download(url *url.URL) bool {
 
 	if resp.StatusCode == fasthttp.StatusOK {
 		size := resp.ContentLength
-		n, _ := io.Copy(out, body.(io.ReadCloser))
+		stat, _ := out.Stat()
+		if stat.Size() == size {
+			return true
+		}
 
+		n, _ := io.Copy(out, body.(io.ReadCloser))
 		return size == n
 	}
 
