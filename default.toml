@@ -11,7 +11,8 @@ interval = 120
 [server]
 bind = "0.0.0.0"
 port = 80
-# host defines tarball urls (host of registry.npmjs.org/package/-/package-version.tgz)
+# scheme and host to make tarball urls (host of registry.npmjs.org/package/-/package-version.tgz)
+scheme = "http"
 host = "localhost"
 # send X-Accel-Redirect header to clients such as nginx and apache.
 # see: https://www.nginx.com/resources/wiki/start/topics/examples/x-accel/
