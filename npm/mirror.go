@@ -144,12 +144,15 @@ func (c *MirrorClient) Run(onetime bool) {
 	if !c.db.IsInitialized() {
 		log.Debug("Database has not been initialized. Init..")
 		c.db.Init()
+	} else {
+		log.Debug("Database has already been initialized.")
 	}
 
 	if !c.db.IsInitialized() {
 		log.Fatal("Failed to initialize database")
 	}
 
+	log.Debug("Loading stats..")
 	stats := c.db.GetStats()
 	log.WithFields(logrus.Fields{
 		"Packages":  stats.Packages,

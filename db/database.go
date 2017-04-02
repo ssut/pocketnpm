@@ -82,7 +82,11 @@ func (pb *PocketBase) GetItemCount(name string) int {
 	var count int
 	pb.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(name))
-		count = b.Stats().KeyN
+
+		b.ForEach(func(k, v []byte) error {
+			count++
+			return nil
+		})
 
 		return nil
 	})
