@@ -2,13 +2,18 @@
 
 PocketNPM is a simple but powerful utility for mirroring the full of npm packages from another npm registry, without heaving to install some *possibly* heavy dependencies such as CouchDB and Nginx.
 
+You can use the test server at `npm.airfly.io`.
+
 ## Usage
 
 ```bash
 $ go get -u github.com/ssut/pocketnpm
-$ pocketnpm init
+$ pocketnpm init # to create a default config file under the current directory
 $ pocketnpm start # mirroring
+$ pocketnpm start -onetime # disable continuous mirroring
 $ pocketnpm start -s # start server
+$ pocketnpm -d start # debug mode
+$ pocketnpm start -s -only-server # start only server
 ```
 
 Note that your first time mirroring may take up to a day or more, and it may fail with an error saying that:
@@ -18,9 +23,11 @@ Note that your first time mirroring may take up to a day or more, and it may fai
 
 Once a mirror has been setup up, PocketNPM will automatically sync your mirror once every interval.
 
+### Install the systemd service
+
 ## Why
 
-It's very hard nowadays to mirror the npm repo because [npm separated attachments](http://blog.npmjs.org/post/83774616862/deprecating-fullfatdb) from the main couchdb database(called skim), so now the only way to make a full mirror is either to cline `replicate.npmjs.com` and use [npm-fullfat-registry](https://github.com/npm/npm-fullfat-registry), or to use a lazy mirroring tool such as `local-npm` and `npm-lazy-mirror`.
+It's very hard nowadays to mirror the npm repo because [npm separated attachments](http://blog.npmjs.org/post/83774616862/deprecating-fullfatdb) from the main couchdb database(called skim), so now the only way to make a full mirror is either to clone `replicate.npmjs.com` and use [npm-fullfat-registry](https://github.com/npm/npm-fullfat-registry), or to use a lazy mirroring tool such as `local-npm` and `npm-lazy-mirror`.
 
 ### Use Cases and Goals
 
@@ -88,9 +95,13 @@ You need to run pocketnpm on a case-sensitive filesystem.
 
 macOS natively does this OK even though the filesystem is not strictly case-sensitive and pocketnpm will work fine when running on macOS. However, tarring a pocketnpm data directory and moving it to, e.g. Linux with a case-sensitive filesystem will lead to inconsistencies.
 
-## Production
+## SSDs are highly recommended for database storage
 
-### Install the systemd service
+SSDs are highly recommended for database storage, just like any other database. Using SSDs for data storage is good as well but the performance depends heavily on the database storage.
+
+### You can't clone the mirror itself
+
+It is not a goal of PocketNPM to pretend the real implementation. Therefore you can't use the same features as the public registry, these features may not be implemented.
 
 ## License
 
