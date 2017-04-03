@@ -99,6 +99,8 @@ func (c *MirrorClient) Start() {
 			}
 
 			if result.Deleted {
+				path := getLocalPath(c.config.Path, result.Package.ID)
+				os.RemoveAll(path)
 				db.DeletePackage(result.Package.ID)
 				log.WithFields(logrus.Fields{
 					"worker": result.WorkerID,
@@ -263,9 +265,8 @@ func (c *MirrorClient) Run(onetime bool) {
 			"marked":   markedCount,
 		}).Info("State marked as run for updates")
 		go c.Update()
-
-		exit := make(chan struct{}, 1)
-		<-exit
 	}
 
+	exit := make(chan struct{}, 1)
+	<-exit
 }

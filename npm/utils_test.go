@@ -25,6 +25,11 @@ func TestGetLocalPath(t *testing.T) {
 			path:     "/react/-/react.tgz",
 			expected: "/var/lib/registry/r/react/-/react.tgz",
 		},
+		{
+			base:     "/var/lib/registry/",
+			path:     "react",
+			expected: "/var/lib/registry/r/react",
+		},
 	}
 
 	for i, test := range tests {
