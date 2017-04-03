@@ -151,6 +151,17 @@ func (pb *PocketBase) delCache(key string) {
 // GetItemCount method returns the count of items in the bucket
 func (pb *PocketBase) GetItemCount(name string) int {
 	var count int
+
+	dec := pb.getCacheDecoder("count:" + name)
+	if dec != nil {
+		var cache int
+		decerr := dec.Decode(&cache)
+		if decerr == nil {
+			count = cache
+			return count
+		}
+	}
+
 	pb.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(name))
 		c := b.Cursor()
@@ -162,6 +173,7 @@ func (pb *PocketBase) GetItemCount(name string) int {
 		return nil
 	})
 
+	pb.setCache("count:"+name, count)
 	return count
 }
 
@@ -179,13 +191,26 @@ func (pb *PocketBase) GetStats() *DatabaseStats {
 
 // GetSequence method returns current sequence of registry
 func (pb *PocketBase) GetSequence() int {
-	sequence := 0
+	var sequence int
+
+	dec := pb.getCacheDecoder("global:sequence")
+	if dec != nil {
+		var cache int
+		decerr := dec.Decode(&cache)
+		if decerr == nil {
+			sequence = cache
+			return sequence
+		}
+	}
+
 	pb.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("Globals"))
 		v := b.Get([]byte("sequence"))
 		sequence = int(binary.LittleEndian.Uint32(v))
 		return nil
 	})
+
+	pb.setCache("global:sequence", sequence)
 
 	return sequence
 }
@@ -201,6 +226,8 @@ func (pb *PocketBase) SetSequence(seq int) {
 
 		return nil
 	})
+
+	pb.setCache("global:sequence", seq)
 }
 
 // GetCountOfMarks method returns a count of marked items
@@ -209,7 +236,18 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 	if cond {
 		condition = MarkComplete
 	}
-	count := 0
+
+	var count int
+
+	dec := pb.getCacheDecoder("mark:" + condition)
+	if dec != nil {
+		var cache interface{}
+		decerr := dec.Decode(&cache)
+		if decerr == nil {
+			count = cache.(int)
+			return count
+		}
+	}
 
 	pb.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("Marks"))
@@ -223,6 +261,7 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 		return nil
 	})
 
+	pb.setCache("mark:"+condition, count)
 	return count
 }
 
@@ -350,6 +389,11 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 
 // PutPackage method inserts a package into the appropriate buckets
 func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool, overwrite bool) error {
+	defer pb.delCache("count:Packages")
+	defer pb.delCache("count:Marks")
+	defer pb.delCache("mark:0")
+	defer pb.delCache("mark:1")
+
 	packages := tx.Bucket([]byte("Packages"))
 	marks := tx.Bucket([]byte("Marks"))
 	key := []byte(id)
@@ -397,6 +441,13 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 func (pb *PocketBase) DeletePackage(name string) {
 	key := []byte(name)
 
+	defer pb.delCache("count:Packages")
+	defer pb.delCache("count:Documents")
+	defer pb.delCache("count:Files")
+	defer pb.delCache("count:Marks")
+	defer pb.delCache("mark:0")
+	defer pb.delCache("mark:1")
+
 	pb.db.Update(func(tx *bolt.Tx) error {
 		packages := tx.Bucket([]byte("Packages"))
 		documents := tx.Bucket([]byte("Documents"))
@@ -418,6 +469,10 @@ func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev strin
 	defer tx.Rollback()
 	defer pb.delCache(document)
 	defer pb.delCache(document + ":rev")
+	defer pb.delCache("count:Packages")
+	defer pb.delCache("count:Documents")
+	defer pb.delCache("count:Files")
+	defer pb.delCache("count:Marks")
 
 	key := []byte(pack.ID)
 
