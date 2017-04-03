@@ -10,6 +10,7 @@ import (
 
 	"net/url"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/allegro/bigcache"
 	"github.com/boltdb/bolt"
 
@@ -56,6 +57,27 @@ func NewPocketBase(config *DatabaseConfig) *PocketBase {
 // Close method closes database connection
 func (pb *PocketBase) Close() {
 	pb.db.Close()
+}
+
+// LogStats method logs database stats every 10 seconds
+func (pb *PocketBase) LogStats() {
+	prev := pb.db.Stats()
+
+	for {
+		time.Sleep(10 * time.Second)
+
+		stats := pb.db.Stats()
+		cached := pb.cache.Len()
+		diff := stats.Sub(&prev)
+
+		log.WithFields(logrus.Fields{
+			"memcached":    cached,
+			"openTxN":      diff.OpenTxN,
+			"pendingPageN": stats.PendingPageN,
+		}).Info("DB Status")
+
+		prev = stats
+	}
 }
 
 // Init method initializes scheme

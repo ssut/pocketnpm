@@ -97,12 +97,18 @@ func main() {
 				cli.BoolFlag{Name: "only-server", Usage: "Disable mirroring and start only registry server"},
 				cli.BoolFlag{Name: "onetime, o", Usage: "One-time mirroring (disable continuous mirroring)"},
 				cli.BoolFlag{Name: "server, s", Usage: "Start NPM registry server"},
+				cli.BoolFlag{Name: "watch-status, w", Usage: "Watch PocketNPM status"},
 			},
 			Action: func(c *cli.Context) error {
 				conf := getConfig(c.String("config"))
 
 				// global database frontend
 				pb := db.NewPocketBase(&conf.DB)
+
+				// database status
+				if c.Bool("watch-status") {
+					go pb.LogStats()
+				}
 
 				// webserver
 				if c.Bool("server") {
