@@ -120,7 +120,6 @@ func (c *NPMClient) GetDocument(id string) string {
 	u, _ := url.Parse(c.registry)
 
 	var docURL string
-	var statusCode int
 	var err error
 
 	// if id starts with "@" then we have to use the default http client
@@ -142,8 +141,8 @@ func (c *NPMClient) GetDocument(id string) string {
 		return ""
 	}
 	if resp.StatusCode != fasthttp.StatusOK {
-		log.Errorf("Unexpected status code: %d (%s)", statusCode, docURL)
-		return ""
+		log.Errorf("Unexpected status code: %d (%s)", resp.StatusCode, docURL)
+		return strconv.FormatInt(int64(resp.StatusCode), 10)
 	}
 
 	return string(body.([]byte))

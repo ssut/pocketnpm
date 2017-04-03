@@ -37,6 +37,7 @@ type MirrorWorkResult struct {
 	Document         string
 	Files            []*url.URL
 	WorkerID         int
+	Deleted          bool
 }
 
 // NewMirrorWorker creates a worker with given parameters
@@ -83,6 +84,19 @@ func (w *MirrorWorker) Start() {
 				err := json.Unmarshal([]byte(document), &doc)
 				if err != nil {
 					log.Warnf("Failed to decode JSON document: %s (%v)", work.ID, err)
+
+					// doc has been deleted
+					if document == "404" {
+						w.ResultQueue <- &MirrorWorkResult{
+							Package:          work,
+							DocumentRevision: "",
+							Document:         document,
+							Files:            downloads,
+							WorkerID:         w.ID,
+							Deleted:          true,
+						}
+						continue
+					}
 				}
 
 				// find possible urls

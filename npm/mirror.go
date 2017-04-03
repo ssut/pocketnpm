@@ -70,6 +70,8 @@ func (c *MirrorClient) Start() {
 	// Load all packages with its revision
 	packages := c.db.GetIncompletePackages()
 
+	log.Debugf("Packages to queue: %d", len(packages))
+
 	// Array of workers
 	var workers = make([]*MirrorWorker, c.config.MaxConnections)
 	// Initialize channels
@@ -81,8 +83,8 @@ func (c *MirrorClient) Start() {
 	var wg sync.WaitGroup
 
 	// Create mirror workers
+	log.Debugf("Starting %d workers", c.config.MaxConnections)
 	for i := 0; i < c.config.MaxConnections; i++ {
-		log.Debugf("Starting worker: %d", i)
 		workers[i] = NewMirrorWorker(i, c.npmClient, workerQueue, resultQueue, &wg)
 		workers[i].Start()
 	}
@@ -93,6 +95,14 @@ func (c *MirrorClient) Start() {
 			result, done := <-resultQueue
 			if !done {
 				return
+			}
+
+			if result.Deleted {
+				db.DeletePackage(result.Package.ID)
+				log.WithFields(logrus.Fields{
+					"worker": result.WorkerID,
+				}).Info("Deleted: %s", result.Package.ID)
+				continue
 			}
 
 			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, result.Files)

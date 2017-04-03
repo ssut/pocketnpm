@@ -310,13 +310,13 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 }
 
 // PutPackage method inserts a package into the appropriate buckets
-func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) error {
+func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool, overwrite bool) error {
 	packages := tx.Bucket([]byte("Packages"))
 	marks := tx.Bucket([]byte("Marks"))
 	key := []byte(id)
 
 	// Check if package's already exists
-	if value := packages.Get(key); value != nil {
+	if value := packages.Get(key); value != nil && !overwrite {
 		return nil
 	}
 
@@ -343,7 +343,7 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 	defer tx.Rollback()
 
 	for _, doc := range allDocs {
-		err := pb.PutPackage(tx, doc.ID, doc.Revision, false)
+		err := pb.PutPackage(tx, doc.ID, doc.Revision, false, true)
 		if err != nil {
 			log.Error(err)
 		}
@@ -352,6 +352,25 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 	if err := tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// DeletePackage method deletes a package
+func (pb *PocketBase) DeletePackage(name string) {
+	key := []byte(name)
+
+	pb.db.Update(func(tx *bolt.Tx) error {
+		packages := tx.Bucket([]byte("Packages"))
+		documents := tx.Bucket([]byte("Documents"))
+		files := tx.Bucket([]byte("Files"))
+		marks := tx.Bucket([]byte("Marks"))
+
+		packages.Delete(key)
+		documents.Delete(key)
+		files.Delete(key)
+		marks.Delete(key)
+
+		return nil
+	})
 }
 
 // PutCompleted method inserts a completed package into the appropriate buckets
