@@ -195,16 +195,26 @@ func (c *NPMClient) Download(url *url.URL) bool {
 	}
 	defer out.Close()
 
-	resp, body, err := c.attemptGet(url.String(), 3, true)
-	defer body.(io.ReadCloser).Close()
-
-	if resp.StatusCode == fasthttp.StatusOK {
-		size := resp.ContentLength
+	var size int64
+	headResp, err := http.Head(url.String())
+	if err != nil {
 		stat, _ := out.Stat()
+		size = headResp.ContentLength
 		if stat.Size() == size {
 			return true
 		}
+	}
 
+	resp, body, err := c.attemptGet(url.String(), 3, true)
+	if _, ok := body.(io.ReadCloser); !ok {
+		return false
+	}
+	defer body.(io.ReadCloser).Close()
+
+	if resp.StatusCode == fasthttp.StatusOK {
+		if size == 0 {
+			size = headResp.ContentLength
+		}
 		n, _ := io.Copy(out, body.(io.ReadCloser))
 		return size == n
 	}
