@@ -3,6 +3,8 @@
 path = "npm.db"
 # max in-memory cache size in MB (0 = unlimited)
 max_cache_size = 2048
+# in-memory cache eviction time in minutes
+cache_lifetime = 1440
 
 [mirror]
 registry = "https://replicate.npmjs.com/registry"

@@ -67,7 +67,7 @@ func (c *MirrorClient) FirstRun() {
 
 func (c *MirrorClient) Start() {
 	// Load all packages with its revision
-	packages := c.db.GetImcompletePackages()
+	packages := c.db.GetIncompletePackages()
 
 	// Array of workers
 	var workers = make([]*MirrorWorker, c.config.MaxConnections)

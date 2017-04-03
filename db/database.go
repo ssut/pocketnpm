@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"encoding/binary"
 
-	"github.com/boltdb/bolt"
-
 	"net/url"
+
+	"github.com/allegro/bigcache"
+	"github.com/boltdb/bolt"
 
 	"bytes"
 	"encoding/gob"
@@ -19,8 +21,9 @@ import (
 
 // PocketBase type is a frontend for BoltDB
 type PocketBase struct {
-	db   *bolt.DB
-	path string
+	db    *bolt.DB
+	cache *bigcache.BigCache
+	path  string
 }
 
 // NewPocketBase creates a new PocketBase object
@@ -28,12 +31,23 @@ func NewPocketBase(config *DatabaseConfig) *PocketBase {
 	path, _ := filepath.Abs(config.Path)
 	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
-		log.Fatalf("Failed to load database file: %s", err)
+		log.Fatalf("Failed to load database file: %v", err)
 	}
 
+	cacheConfig := bigcache.DefaultConfig(time.Duration(config.CacheLifetime) * time.Minute)
+	cacheConfig.MaxEntrySize = 8192
+	cacheConfig.HardMaxCacheSize = config.MaxCacheSize
+	cache, err := bigcache.NewBigCache(cacheConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize in-memory cache: %v", err)
+	}
+
+	gob.Register([]*url.URL{})
+
 	pb := &PocketBase{
-		db:   db,
-		path: path,
+		db:    db,
+		cache: cache,
+		path:  path,
 	}
 
 	return pb
@@ -66,6 +80,7 @@ func (pb *PocketBase) Init() {
 	})
 }
 
+// IsInitialized method returns whether the database has initialized
 func (pb *PocketBase) IsInitialized() bool {
 	initialized := false
 	pb.db.View(func(tx *bolt.Tx) error {
@@ -80,6 +95,32 @@ func (pb *PocketBase) IsInitialized() bool {
 	return initialized
 }
 
+func (pb *PocketBase) getCacheDecoder(key string) *gob.Decoder {
+	cache, err := pb.cache.Get(key)
+	if err != nil {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	buf.Write(cache)
+	dec := gob.NewDecoder(&buf)
+	return dec
+}
+
+func (pb *PocketBase) setCache(key string, value interface{}) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(value)
+	if err != nil {
+		log.Debug(err)
+		return
+	}
+
+	pb.cache.Set(key, buf.Bytes())
+	log.Debugf("Cache set: %s", key)
+}
+
+// GetItemCount method returns the count of items in the bucket
 func (pb *PocketBase) GetItemCount(name string) int {
 	var count int
 	pb.db.View(func(tx *bolt.Tx) error {
@@ -96,6 +137,7 @@ func (pb *PocketBase) GetItemCount(name string) int {
 	return count
 }
 
+// GetStats method returns status of various buckets
 func (pb *PocketBase) GetStats() *DatabaseStats {
 	stats := &DatabaseStats{
 		Packages:  pb.GetItemCount("Packages"),
@@ -107,6 +149,7 @@ func (pb *PocketBase) GetStats() *DatabaseStats {
 	return stats
 }
 
+// GetSequence method returns current sequence of registry
 func (pb *PocketBase) GetSequence() int {
 	sequence := 0
 	pb.db.View(func(tx *bolt.Tx) error {
@@ -119,6 +162,7 @@ func (pb *PocketBase) GetSequence() int {
 	return sequence
 }
 
+// SetSequence method sets current sequence of registry
 func (pb *PocketBase) SetSequence(seq int) {
 	pb.db.Update(func(tx *bolt.Tx) error {
 		global := tx.Bucket([]byte("Globals"))
@@ -131,6 +175,7 @@ func (pb *PocketBase) SetSequence(seq int) {
 	})
 }
 
+// GetCountOfMarks method returns a count of marked items
 func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 	condition := MarkIncomplete
 	if cond {
@@ -153,7 +198,8 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 	return count
 }
 
-func (pb *PocketBase) GetImcompletePackages() []*BarePackage {
+// GetIncompletePackages method returns a list of packages that are ready for queueing
+func (pb *PocketBase) GetIncompletePackages() []*BarePackage {
 	count := pb.GetCountOfMarks(false)
 	packages := make([]*BarePackage, count)
 
@@ -180,11 +226,24 @@ func (pb *PocketBase) GetImcompletePackages() []*BarePackage {
 	return packages
 }
 
+// GetDocument method returns a document by given name
 func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, filelist []*url.URL, err error) {
 	document = "{}"
 	filelist = nil
 
 	key := []byte(id)
+
+	dec := pb.getCacheDecoder(id)
+	if dec != nil {
+		var caches []interface{}
+		decerr := dec.Decode(&caches)
+		if decerr == nil {
+			document = caches[0].(string)
+			filelist = caches[1].([]*url.URL)
+			log.Debugf("Cache hit: %s", id)
+			return
+		}
+	}
 
 	pb.db.View(func(tx *bolt.Tx) error {
 		documents := tx.Bucket([]byte("Documents"))
@@ -210,7 +269,7 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 			dec := gob.NewDecoder(&buf)
 			decerr := dec.Decode(&filelist)
 			if decerr != nil {
-				err = errors.New(fmt.Sprintf("Internal error: %v", decerr))
+				err = fmt.Errorf("Internal error: %v", decerr)
 				return nil
 			}
 		}
@@ -218,9 +277,16 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 		return nil
 	})
 
+	caches := []interface{}{
+		document,
+		filelist,
+	}
+	pb.setCache(id, caches)
+
 	return
 }
 
+// PutPackage method inserts a package into the appropriate buckets
 func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) error {
 	packages := tx.Bucket([]byte("Packages"))
 	marks := tx.Bucket([]byte("Marks"))
@@ -248,6 +314,7 @@ func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool) 
 	return nil
 }
 
+// PutPackages method is a bulk method of PutPackage
 func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 	tx, _ := pb.db.Begin(true)
 	defer tx.Rollback()
@@ -264,6 +331,7 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 	}
 }
 
+// PutCompleted method inserts a completed package into the appropriate buckets
 func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev string, downloads []*url.URL) bool {
 	tx, _ := pb.db.Begin(true)
 	defer tx.Rollback()
