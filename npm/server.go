@@ -122,6 +122,7 @@ func (server *PocketServer) replaceAttachments(document string) string {
 func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name string) string {
 	doc, _, err := server.db.GetDocument(name, false)
 	if err != nil {
+		ctx.SetStatusCode(404)
 		server.writeJSON(ctx, map[string]string{
 			"error": err.Error(),
 		})
