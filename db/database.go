@@ -100,6 +100,9 @@ func (pb *PocketBase) getCacheDecoder(key string) *gob.Decoder {
 	if err != nil {
 		return nil
 	}
+	if len(cache) == 0 {
+		return nil
+	}
 
 	var buf bytes.Buffer
 	buf.Write(cache)
@@ -117,7 +120,10 @@ func (pb *PocketBase) setCache(key string, value interface{}) {
 	}
 
 	pb.cache.Set(key, buf.Bytes())
-	log.Debugf("Cache set: %s", key)
+}
+
+func (pb *PocketBase) delCache(key string) {
+	pb.cache.Set(key, []byte{})
 }
 
 // GetItemCount method returns the count of items in the bucket
@@ -240,7 +246,6 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 		if decerr == nil {
 			document = caches[0].(string)
 			filelist = caches[1].([]*url.URL)
-			log.Debugf("Cache hit: %s", id)
 			return
 		}
 	}
@@ -335,6 +340,7 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev string, downloads []*url.URL) bool {
 	tx, _ := pb.db.Begin(true)
 	defer tx.Rollback()
+	defer pb.delCache(document)
 
 	key := []byte(pack.ID)
 
