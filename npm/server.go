@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -110,6 +111,19 @@ func (server *PocketServer) replaceAttachments(document string) string {
 	return document
 }
 
+func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name string) string {
+	doc, _, err := server.db.GetDocument(name, false)
+	if err != nil {
+		server.writeJSON(ctx, map[string]string{
+			"error": err.Error(),
+		})
+		return ""
+	}
+	doc = server.replaceAttachments(doc)
+
+	return doc
+}
+
 func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
 	stat := server.db.GetStats()
 	markedCount := server.db.GetCountOfMarks(true)
@@ -123,13 +137,7 @@ func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
 
 func (server *PocketServer) getDocument(ctx *fasthttp.RequestCtx) {
 	name := ctx.UserValue("name").(string)
-	doc, _, err := server.db.GetDocument(name, false)
-	if err != nil {
-		server.writeJSON(ctx, map[string]string{
-			"error": err.Error(),
-		})
-	}
-	doc = server.replaceAttachments(doc)
+	doc := server.getDocumentByName(ctx, name)
 	size := strconv.FormatInt(int64(len(doc)), 10)
 
 	ctx.SetContentType("application/json")
@@ -138,7 +146,56 @@ func (server *PocketServer) getDocument(ctx *fasthttp.RequestCtx) {
 }
 
 func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
+	name, version := ctx.UserValue("name").(string), ctx.UserValue("version").(string)
+	doc := server.getDocumentByName(ctx, name)
 
+	var jsonDoc interface{}
+	json.Unmarshal([]byte(doc), &jsonDoc)
+	root := jsonDoc.(map[string]interface{})
+	distTags := root["dist-tags"].(map[string]interface{})
+	versions := root["versions"].(map[string]interface{})
+	versionKeys := make([]string, 0, len(versions))
+	for k := range versions {
+		versionKeys = append(versionKeys, k)
+	}
+
+	var versionDoc interface{}
+
+	// found in dist-tags or version tree
+	if val, ok := distTags[version]; ok {
+		versionDoc = versions[val.(string)]
+	} else if val, ok := versions[version]; ok {
+		versionDoc = val
+	} else {
+		// parse special version name such as "^1.0.0" (above 1.0.0), "~1.0.0"("=1.0.0"), and just "2" (above 2.0.0).
+		filter := string(version[0])
+		versionStr := version[1:len(version)]
+		if filter == "~" || filter == "=" {
+			versionDoc = versions[versionStr]
+		} else { // ^ (above)
+			if filter != "^" {
+				versionStr = version
+			}
+			key := strings.Split(versionStr, ".")[0]
+			sort.Slice(versionKeys, func(i, j int) bool {
+				return versionKeys[i] > versionKeys[j]
+			})
+
+			for _, ver := range versionKeys {
+				if strings.HasPrefix(ver, key) {
+					versionDoc = versions[ver]
+					break
+				}
+			}
+		}
+	}
+
+	if versionDoc == nil {
+		server.raiseNotFound(ctx)
+		return
+	}
+
+	server.writeJSON(ctx, versionDoc)
 }
 
 func (server *PocketServer) downloadPackage(ctx *fasthttp.RequestCtx) {
