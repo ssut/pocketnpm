@@ -2,6 +2,22 @@
 
 PocketNPM is a simple but powerful utility for mirroring the full of npm packages from another npm registry, without heaving to install some *possibly* heavy dependencies such as CouchDB and Nginx.
 
+## Usage
+
+```bash
+$ go get -u github.com/ssut/pocketnpm
+$ pocketnpm init
+$ pocketnpm start # mirroring
+$ pocketnpm start -s # start server
+```
+
+Note that your first time mirroring may take up to a day or more, and it may fail with an error saying that:
+
+- DNS failure: add domain to hosts file (example: `151.101.0.162 registry.npmjs.org`)
+- Not enough disk space: free at least 1TB of disk space
+
+Once a mirror has been setup up, PocketNPM will automatically sync your mirror once every interval.
+
 ## Why
 
 It's very hard nowadays to mirror the npm repo because [npm separated attachments](http://blog.npmjs.org/post/83774616862/deprecating-fullfatdb) from the main couchdb database(called skim), so now the only way to make a full mirror is either to cline `replicate.npmjs.com` and use [npm-fullfat-registry](https://github.com/npm/npm-fullfat-registry), or to use a lazy mirroring tool such as `local-npm` and `npm-lazy-mirror`.
