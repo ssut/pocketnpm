@@ -100,13 +100,21 @@ func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name
 func (server *PocketServer) replaceAttachments(document string) string {
 	// ReplaceAllStringFunc is considered to be slow
 	urls := ExpRegistryFile.FindAllStringSubmatch(document, -1)
+	replaces := make([]string, len(urls)*2)
+
+	var i int
 	for _, u := range urls {
 		origin := u[0]
 		path := u[4]
 		fixed := fmt.Sprintf(`"tarball":"%s://%s/%s"`, server.serverConfig.Scheme, server.serverConfig.Host, path)
 
-		document = strings.Replace(document, origin, fixed, 1)
+		replaces[i] = origin
+		replaces[i+1] = fixed
+		i += 2
 	}
+
+	replacer := strings.NewReplacer(replaces...)
+	document = replacer.Replace(document)
 
 	return document
 }
