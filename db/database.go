@@ -279,12 +279,14 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 			return nil
 		}
 
-		if string(mark) == MarkIncomplete {
+		documentBytes := documents.Get(key)
+
+		if (documentBytes == nil || string(documentBytes) == "") && string(mark) == MarkIncomplete {
 			err = errors.New("Package has not been downloaded yet")
 			return nil
 		}
 
-		document = string(documents.Get(key))
+		document = string(documentBytes)
 
 		if withfiles {
 			var buf bytes.Buffer
