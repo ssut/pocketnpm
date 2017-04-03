@@ -38,7 +38,7 @@ type ChangesResponse struct {
 type changesResult struct {
 	Sequence int    `json:"seq"`
 	ID       string `json:"id"`
-	Changes  struct {
+	Changes  []struct {
 		Revision string `json:"rev"`
 	}
 }

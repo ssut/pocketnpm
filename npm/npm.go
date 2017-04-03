@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -152,7 +153,7 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, "_changes")
 	q := make(url.Values)
-	q.Add("since", string(seq))
+	q.Add("since", strconv.FormatInt(int64(seq), 10))
 	u.RawQuery = q.Encode()
 
 	log.Debugf("Get: %s", u.String())
