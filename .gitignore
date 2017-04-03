@@ -25,4 +25,5 @@ _testmain.go
 
 # temporary files for real-world testing
 *.db
+*.log
 registry/
