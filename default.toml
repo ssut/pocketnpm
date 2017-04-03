@@ -22,3 +22,4 @@ host = "localhost"
 # send X-Accel-Redirect header to clients such as nginx and apache.
 # see: https://www.nginx.com/resources/wiki/start/topics/examples/x-accel/
 x_accel_redirect = false
+logpath = "pocketnpm.access.log"

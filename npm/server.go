@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/buaazp/fasthttprouter"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
@@ -22,6 +23,7 @@ type PocketServer struct {
 	serverConfig *ServerConfig
 	mirrorConfig *MirrorConfig
 	router       *fasthttprouter.Router
+	logger       *logrus.Logger
 }
 
 // NewPocketServer initializes new instance of PocketServer
@@ -31,11 +33,30 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 		log.Fatalf("Directory does not exist: %s", mirrorConfig.Path)
 	}
 
+	logger := logrus.New()
+	if logPath := serverConfig.LogPath; logPath != "" {
+		logPath, _ = filepath.Abs(logPath)
+		file, err := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			file, err = os.Create(logPath)
+		}
+
+		if err == nil {
+			logger.Out = file
+			logger.Formatter = &logrus.JSONFormatter{}
+		} else {
+			log.Warnf("Failed to open log file: %s", logPath)
+		}
+	} else {
+		logger = nil
+	}
+
 	server := &PocketServer{
 		db:           db,
 		serverConfig: serverConfig,
 		mirrorConfig: mirrorConfig,
 		router:       fasthttprouter.New(),
+		logger:       logger,
 	}
 	server.addRoutes()
 
@@ -50,16 +71,43 @@ func (server *PocketServer) Run() {
 }
 
 func (server *PocketServer) addRoutes() {
-	server.router.GET("/", server.getIndex)
-	server.router.GET("/:name", server.getDocument)
-	server.router.GET("/:name/:version", server.getDocumentByVersion)
-	server.router.GET("/:name/:version/:tarball", server.downloadPackage)
+	server.router.GET("/", server.logging(server.getIndex))
+	server.router.GET("/:name", server.logging(server.getDocument))
+	server.router.GET("/:name/:version", server.logging(server.getDocumentByVersion))
+	server.router.GET("/:name/:version/:tarball", server.logging(server.downloadPackage))
 	server.router.NotFound = server.raiseNotFound
+	server.router.PanicHandler = server.handlePanic
+}
+
+func (server *PocketServer) logging(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	return fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+		next(ctx)
+
+		if server.logger == nil {
+			return
+		}
+
+		params := []interface{}{
+			ctx.RemoteIP().String(),
+			ctx.Method(),
+			ctx.Path(),
+			ctx.Response.StatusCode(),
+			ctx.Referer(),
+			ctx.UserAgent(),
+		}
+		server.logger.Info(fmt.Sprintf(`%s - "%s %s" %d "%s" "%s"`, params...))
+
+	})
 }
 
 func (server *PocketServer) raiseNotFound(ctx *fasthttp.RequestCtx) {
 	ctx.SetStatusCode(404)
 	ctx.Write([]byte("{}"))
+}
+
+func (server *PocketServer) handlePanic(ctx *fasthttp.RequestCtx, panic interface{}) {
+	ctx.SetStatusCode(500)
+	log.Debugf("%v", panic)
 }
 
 func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interface{}) {

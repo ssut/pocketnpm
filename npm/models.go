@@ -13,6 +13,7 @@ type ServerConfig struct {
 	Host         string `toml:"host"`
 	Port         int    `toml:"port"`
 	EnableXAccel bool   `toml:"x_accel_redirect"`
+	LogPath      string `toml:"logpath"`
 }
 
 type AllDocsResponse struct {
