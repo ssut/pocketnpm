@@ -232,6 +232,24 @@ func (pb *PocketBase) GetIncompletePackages() []*BarePackage {
 	return packages
 }
 
+// GetRevision method returns a revision of document
+func (pb *PocketBase) GetRevision(id string) (rev string) {
+	rev = ""
+	key := []byte(id)
+
+	pb.db.View(func(tx *bolt.Tx) error {
+		packages := tx.Bucket([]byte("Packages"))
+		val := packages.Get(key)
+		if val != nil {
+			rev = string(val)
+		}
+
+		return nil
+	})
+
+	return
+}
+
 // GetDocument method returns a document by given name
 func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, filelist []*url.URL, err error) {
 	document = "{}"

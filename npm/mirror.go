@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
@@ -141,6 +142,54 @@ func (c *MirrorClient) Start() {
 	log.Info("Done")
 }
 
+func (c *MirrorClient) Update() {
+	interval := time.Duration(c.config.Interval) * time.Second
+	for {
+		// Load changes
+		since := c.db.GetSequence()
+		changes := c.npmClient.GetChangesSince(since)
+		if since == changes.LastSequence {
+			log.Info("Update: currently up to date. no packages will be updated")
+			time.Sleep(interval)
+			return
+		}
+
+		updates := map[string]*db.BarePackage{}
+		for _, pkg := range changes.Results {
+			name := pkg.ID
+			rev := pkg.Changes[0].Revision
+			currentRev := c.db.GetRevision(name)
+
+			if currentRev == "" || currentRev != rev {
+				updates[name] = &db.BarePackage{
+					ID:       name,
+					Revision: rev,
+				}
+			}
+		}
+
+		i := 0
+		packages := make([]*db.BarePackage, len(updates))
+		for _, pkg := range updates {
+			packages[i] = pkg
+			i++
+		}
+
+		log.Infof("Update: %d packages will be updated", len(packages))
+
+		// Put all packages
+		c.db.PutPackages(packages)
+		// Update sequence
+		c.db.SetSequence(changes.LastSequence)
+		log.Debugf("Update: Sequence has been set to %d (was %d)", changes.LastSequence, since)
+
+		// Start worker
+		c.Start()
+
+		time.Sleep(interval)
+	}
+}
+
 func (c *MirrorClient) Run(onetime bool) {
 	if !c.db.IsInitialized() {
 		log.Debug("Database has not been initialized. Init..")
@@ -192,6 +241,7 @@ func (c *MirrorClient) Run(onetime bool) {
 			"sequence": seq,
 			"marked":   markedCount,
 		}).Info("State marked as run for updates")
+		go c.Update()
 
 		exit := make(chan struct{}, 1)
 		<-exit
