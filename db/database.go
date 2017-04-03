@@ -153,11 +153,11 @@ func (pb *PocketBase) GetItemCount(name string) int {
 	var count int
 	pb.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(name))
+		c := b.Cursor()
 
-		b.ForEach(func(k, v []byte) error {
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
 			count++
-			return nil
-		})
+		}
 
 		return nil
 	})
