@@ -246,6 +246,8 @@ func (c *MirrorClient) Run(onetime bool) {
 		return
 	}
 
+	seq = c.db.GetSequence()
+
 	if seq > 0 && markedCount == stats.Packages {
 		log.WithFields(logrus.Fields{
 			"sequence": seq,
