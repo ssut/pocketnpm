@@ -68,7 +68,7 @@ func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interfac
 		ctx.SetStatusCode(500)
 		return
 	}
-	ctx.Write(json)
+	ctx.SetBody(json)
 }
 
 func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name string) {
@@ -120,6 +120,18 @@ func (server *PocketServer) replaceAttachments(document string) string {
 }
 
 func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name string) string {
+	rev := server.db.GetRevision(name)
+	ctx.Response.Header.Set("ETag", rev)
+
+	if cacheHeader := ctx.Request.Header.Peek("If-None-Match"); cacheHeader != nil {
+		if string(cacheHeader) == rev {
+			ctx.SetStatusCode(304)
+			return ""
+		}
+	} else {
+		ctx.Response.Header.Set("Cache-Control", "must-revalidate")
+	}
+
 	doc, _, err := server.db.GetDocument(name, false)
 	if err != nil {
 		ctx.SetStatusCode(404)
