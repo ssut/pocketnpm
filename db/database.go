@@ -279,7 +279,9 @@ func (pb *PocketBase) GetRevision(id string) (rev string) {
 		return nil
 	})
 
-	pb.setCache(id+":rev", rev)
+	if rev != "" {
+		pb.setCache(id+":rev", rev)
+	}
 	return
 }
 
@@ -335,11 +337,13 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 		return nil
 	})
 
-	caches := []interface{}{
-		document,
-		filelist,
+	if document != "" && document != "{}" {
+		caches := []interface{}{
+			document,
+			filelist,
+		}
+		pb.setCache(id, caches)
 	}
-	pb.setCache(id, caches)
 
 	return
 }
