@@ -237,6 +237,16 @@ func (pb *PocketBase) GetRevision(id string) (rev string) {
 	rev = ""
 	key := []byte(id)
 
+	dec := pb.getCacheDecoder(id + ":rev")
+	if dec != nil {
+		var cache interface{}
+		decerr := dec.Decode(&cache)
+		if decerr == nil {
+			rev = cache.(string)
+			return
+		}
+	}
+
 	pb.db.View(func(tx *bolt.Tx) error {
 		packages := tx.Bucket([]byte("Packages"))
 		val := packages.Get(key)
@@ -247,6 +257,7 @@ func (pb *PocketBase) GetRevision(id string) (rev string) {
 		return nil
 	})
 
+	pb.setCache(id+":rev", rev)
 	return
 }
 
@@ -380,6 +391,7 @@ func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev strin
 	tx, _ := pb.db.Begin(true)
 	defer tx.Rollback()
 	defer pb.delCache(document)
+	defer pb.delCache(document + ":rev")
 
 	key := []byte(pack.ID)
 
