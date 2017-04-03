@@ -12,9 +12,8 @@ import (
 	"strings"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/pquerna/ffjson/ffjson"
 	"github.com/valyala/fasthttp"
-
-	"encoding/json"
 
 	"path"
 
@@ -107,7 +106,7 @@ func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 
 	log.Debugf("Unmarshaling the entire document (%d B)", len(body))
 	var resp AllDocsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := ffjson.Unmarshal(body, &resp); err != nil {
 		log.Print(err)
 		log.Fatalf("Could not decode JSON data: %s", err)
 		return nil
@@ -167,7 +166,7 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	}
 
 	var resp ChangesResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := ffjson.Unmarshal(body, &resp); err != nil {
 		log.Errorf("Could not decode JSON data: %s", err)
 		return nil
 	}

@@ -1,7 +1,6 @@
 package npm
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/buaazp/fasthttprouter"
+	"github.com/pquerna/ffjson/ffjson"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
 	"github.com/valyala/fasthttp"
@@ -112,7 +112,7 @@ func (server *PocketServer) handlePanic(ctx *fasthttp.RequestCtx, panic interfac
 }
 
 func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interface{}) {
-	json, err := json.Marshal(content)
+	json, err := ffjson.Marshal(content)
 	if err != nil {
 		ctx.SetStatusCode(500)
 		return
@@ -222,7 +222,7 @@ func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
 	doc := server.getDocumentByName(ctx, name)
 
 	var jsonDoc interface{}
-	json.Unmarshal([]byte(doc), &jsonDoc)
+	ffjson.Unmarshal([]byte(doc), &jsonDoc)
 	root := jsonDoc.(map[string]interface{})
 	distTags := root["dist-tags"].(map[string]interface{})
 	versions := root["versions"].(map[string]interface{})
