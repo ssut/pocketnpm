@@ -175,7 +175,7 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	return &resp
 }
 
-func (c *NPMClient) Download(url *url.URL) bool {
+func (c *NPMClient) Download(url *url.URL, shasum string) bool {
 	path := getLocalPath(c.path, url.Path)
 	err := os.MkdirAll(filepath.Dir(path), 0755)
 	if err != nil {
@@ -195,12 +195,9 @@ func (c *NPMClient) Download(url *url.URL) bool {
 	}
 	defer out.Close()
 
-	var size int64
-	headResp, err := http.Head(url.String())
-	if err != nil {
-		stat, _ := out.Stat()
-		size = headResp.ContentLength
-		if stat.Size() == size {
+	if _, err := out.Stat(); err == nil {
+		fileHash, err := hashSHA1(out)
+		if err == nil && fileHash == shasum {
 			return true
 		}
 	}
@@ -212,9 +209,7 @@ func (c *NPMClient) Download(url *url.URL) bool {
 	defer body.(io.ReadCloser).Close()
 
 	if resp.StatusCode == fasthttp.StatusOK {
-		if size == 0 {
-			size = headResp.ContentLength
-		}
+		size := resp.ContentLength
 		n, _ := io.Copy(out, body.(io.ReadCloser))
 		return size == n
 	}

@@ -4,18 +4,10 @@ import (
 	"net/url"
 	"sync"
 
-	"regexp"
-
-	"encoding/json"
-
 	"github.com/Sirupsen/logrus"
+	"github.com/pquerna/ffjson/ffjson"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
-)
-
-var (
-	// ExpRegistryFile defines the URL format for registry file
-	ExpRegistryFile = regexp.MustCompile(`"tarball":\s?"((https?):\/\/([\w0-9\.]+)\/([a-zA-Z0-9.\-_\/\@]+\.tgz))"`)
 )
 
 // MirrorWorker contains channels used to act as a worker
@@ -35,7 +27,7 @@ type MirrorWorkResult struct {
 	Package          *db.BarePackage
 	DocumentRevision string
 	Document         string
-	Files            []*url.URL
+	Distributions    []*distribution
 	WorkerID         int
 	Deleted          bool
 }
@@ -78,10 +70,10 @@ func (w *MirrorWorker) Start() {
 					"worker": w.ID,
 				}).Infof("Mirroring: %s", work.ID)
 				document := w.npmClient.GetDocument(work.ID)
-				downloads := []*url.URL{}
+				distributions := []*distribution{}
 
 				var doc DocumentResponse
-				err := json.Unmarshal([]byte(document), &doc)
+				err := ffjson.Unmarshal([]byte(document), &doc)
 				if err != nil {
 					log.Warnf("Failed to decode JSON document: %s (%v)", work.ID, err)
 
@@ -91,7 +83,7 @@ func (w *MirrorWorker) Start() {
 							Package:          work,
 							DocumentRevision: "",
 							Document:         document,
-							Files:            downloads,
+							Distributions:    distributions,
 							WorkerID:         w.ID,
 							Deleted:          true,
 						}
@@ -100,25 +92,18 @@ func (w *MirrorWorker) Start() {
 				}
 
 				// find possible urls
-				urls := ExpRegistryFile.FindAllStringSubmatch(document, -1)
-				for _, u := range urls {
-					scheme, host, path := u[2], u[3], u[4]
-					download := &url.URL{
-						Scheme: scheme,
-						Host:   host,
-						Path:   path,
-					}
-					downloads = append(downloads, download)
-				}
+				distributions = getDistributions(document)
 
 				// download all files here
 				log.WithFields(logrus.Fields{
 					"name":   work.ID,
 					"worker": w.ID,
-				}).Debugf("Total files to download: %d", len(downloads))
-				for _, file := range downloads {
-					result := w.npmClient.Download(file)
-					if !result {
+				}).Debugf("Total files to download: %d", len(distributions))
+				for _, dist := range distributions {
+					file, _ := url.Parse(dist.Tarball)
+
+					dist.Completed = w.npmClient.Download(file, dist.SHA1)
+					if !dist.Completed {
 						log.WithFields(logrus.Fields{
 							"ID": work.ID,
 						}).Warnf("Failed to download: %s", file.Path)
@@ -129,7 +114,7 @@ func (w *MirrorWorker) Start() {
 					Package:          work,
 					DocumentRevision: doc.Revision,
 					Document:         document,
-					Files:            downloads,
+					Distributions:    distributions,
 					WorkerID:         w.ID,
 				}
 			case <-w.QuitChan:

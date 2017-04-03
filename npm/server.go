@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -147,17 +148,17 @@ func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name
 
 func (server *PocketServer) replaceAttachments(document string) string {
 	// ReplaceAllStringFunc is considered to be slow
-	urls := ExpRegistryFile.FindAllStringSubmatch(document, -1)
-	replaces := make([]string, len(urls)*2)
+	dists := getDistributions(document)
+	replaces := make([]string, len(dists)*2)
 
 	var i int
-	for _, u := range urls {
-		origin := u[0]
-		path := u[4]
-		fixed := fmt.Sprintf(`"tarball":"%s://%s/%s"`, server.serverConfig.Scheme, server.serverConfig.Host, path)
+	for _, dist := range dists {
+		u, _ := url.Parse(dist.Tarball)
+		u.Scheme = server.serverConfig.Scheme
+		u.Host = server.serverConfig.Host
 
-		replaces[i] = origin
-		replaces[i+1] = fixed
+		replaces[i] = dist.Tarball
+		replaces[i+1] = u.String()
 		i += 2
 	}
 

@@ -1,6 +1,7 @@
 package npm
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -105,12 +106,20 @@ func (c *MirrorClient) Start() {
 				continue
 			}
 
-			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, result.Files)
+			var files []*url.URL
+			for _, dist := range result.Distributions {
+				if !dist.Completed {
+					continue
+				}
+				file, _ := url.Parse(dist.Tarball)
+				files = append(files, file)
+			}
+			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, files)
 			wg.Done()
 			if succeed {
 				log.WithFields(logrus.Fields{
 					"sameRev": result.Package.Revision == result.DocumentRevision,
-					"files":   len(result.Files),
+					"files":   len(result.Distributions),
 					"worker":  result.WorkerID,
 				}).Infof("Mirrored: %s", result.Package.ID)
 			} else {
