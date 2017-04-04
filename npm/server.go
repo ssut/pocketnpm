@@ -6,9 +6,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/buaazp/fasthttprouter"
@@ -44,7 +46,11 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 
 		if err == nil {
 			logger.Out = file
-			logger.Formatter = &logrus.JSONFormatter{}
+			logger.Formatter = &logrus.TextFormatter{
+				FullTimestamp:  true,
+				DisableColors:  true,
+				QuoteCharacter: "",
+			}
 		} else {
 			log.Warnf("Failed to open log file: %s", logPath)
 		}
@@ -81,22 +87,24 @@ func (server *PocketServer) addRoutes() {
 }
 
 func (server *PocketServer) logging(next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	serverName := fmt.Sprintf("PocketNPM (%s)", runtime.Version())
 	return fasthttp.RequestHandler(func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.SetServer(serverName)
+
+		start := time.Now()
 		next(ctx)
+		elapsed := time.Since(start)
 
 		if server.logger == nil {
 			return
 		}
 
-		params := []interface{}{
-			ctx.RemoteIP().String(),
-			ctx.Method(),
-			ctx.Path(),
-			ctx.Response.StatusCode(),
-			ctx.Referer(),
-			ctx.UserAgent(),
-		}
-		server.logger.Info(fmt.Sprintf(`%s - "%s %s" %d "%s" "%s"`, params...))
+		server.logger.WithFields(logrus.Fields{
+			"IP":         ctx.RemoteIP().String(),
+			"StatusCode": ctx.Response.StatusCode(),
+			"Elapsed":    elapsed.String(),
+			"User-Agent": string(ctx.UserAgent()),
+		}).Info(fmt.Sprintf(`%s %s`, ctx.Method(), ctx.Path()))
 
 	})
 }
