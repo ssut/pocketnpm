@@ -21,6 +21,7 @@ type MirrorClient struct {
 	npmClient *NPMClient
 }
 
+// NewMirrorClient creates an instance of MirrorClient
 func NewMirrorClient(db *db.PocketBase, config *MirrorConfig) *MirrorClient {
 	// Fix relative path
 	config.Path, _ = filepath.Abs(config.Path)
