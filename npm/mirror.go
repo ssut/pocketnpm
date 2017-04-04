@@ -175,7 +175,7 @@ func (c *MirrorClient) Update() {
 		if since == changes.LastSequence {
 			log.Info("Update: currently up to date. no packages will be updated")
 			time.Sleep(interval)
-			return
+			continue
 		}
 
 		updates := map[string]*db.BarePackage{}
@@ -209,6 +209,7 @@ func (c *MirrorClient) Update() {
 
 		// Start worker
 		c.Start()
+		log.Info("Update: finish")
 
 		time.Sleep(interval)
 	}
