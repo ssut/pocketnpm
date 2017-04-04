@@ -9,10 +9,10 @@ const (
 
 // DatabaseConfig defines config for database
 type DatabaseConfig struct {
-	Type          string `toml:"type"`
-	Path          string `toml:"path"`
-	MaxCacheSize  int    `toml:"max_cache_size"`
-	CacheLifetime int    `toml:"cache_lifetime"`
+	Type          string      `toml:"type"`
+	Path          interface{} `toml:"path"`
+	MaxCacheSize  int         `toml:"max_cache_size"`
+	CacheLifetime int         `toml:"cache_lifetime"`
 }
 
 // DatabaseStats represents the count of each bucket
@@ -29,24 +29,29 @@ type BarePackage struct {
 	Revision string
 }
 
+type transactionable interface {
+	Commit() error
+	Rollback() error
+}
+
 // PocketStore represents the database factory interface
 type PocketStore interface {
-	Connect()
+	Connect() error
+	Close()
 	Init()
 	IsInitialized() bool
 	GetItemCount(string) int
-	GetStats() *DatabaseStats
 	GetSequence() int
 	SetSequence(int)
-	GetCountOfMarks(bool) int
+	GetCountOfMarks(string) int
 	GetIncompletePackages() []*BarePackage
 	GetRevision(string) string
-	GetDocument(string, bool) (string, []*url.URL, error)
+	GetDocument(string, bool) (string, []byte, error)
 	GetAllFiles() map[string][]*url.URL
-	PutPackage(string, string, bool, bool) error
-	PutPackages([]*BarePackage)
+	AcquireTx() transactionable
+	PutPackage(transactionable, string, string, bool, bool) error
 	DeletePackage(string)
-	PutCompleted(*BarePackage, string, string, []*url.URL) bool
+	PutCompleted(transactionable, *BarePackage, string, string, []*url.URL) bool
 }
 
 // StoreType represents the type for database store

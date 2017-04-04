@@ -103,7 +103,7 @@ func main() {
 				conf := getConfig(c.String("config"))
 
 				// global database frontend
-				pb := db.NewPocketBase(&conf.DB, false)
+				pb := db.NewPocketBase(&conf.DB)
 
 				// database status
 				if c.Bool("watch-status") {
@@ -136,7 +136,7 @@ func main() {
 				conf := getConfig(c.String("config"))
 
 				// global database frontend
-				pb := db.NewPocketBase(&conf.DB, true)
+				pb := db.NewPocketBase(&conf.DB)
 				// database redundancy check
 				pb.Check()
 

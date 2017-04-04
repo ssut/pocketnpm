@@ -1,13 +1,10 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"encoding/binary"
 
 	"net/url"
 
@@ -25,21 +22,22 @@ import (
 // PocketBase type is a frontend for BoltDB
 type PocketBase struct {
 	db    *bolt.DB
+	store PocketStore
 	cache *bigcache.BigCache
-	path  string
 }
 
 // NewPocketBase creates a new PocketBase object
-func NewPocketBase(config *DatabaseConfig, readonly bool) *PocketBase {
-	path, _ := filepath.Abs(config.Path)
-	dbConfig := &bolt.Options{}
-	if readonly {
-		dbConfig.ReadOnly = true
+func NewPocketBase(config *DatabaseConfig) *PocketBase {
+	var store PocketStore
+	if config.Type == "bolt" {
+		config.Path, _ = filepath.Abs(config.Path.(string))
+		store = newBoltStore(config)
+	} else if config.Type == "gorm" {
+		store = newGormStore(config)
 	}
-
-	db, err := bolt.Open(path, 0600, dbConfig)
+	err := store.Connect()
 	if err != nil {
-		log.Fatalf("Failed to load database file: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
 	cacheConfig := bigcache.DefaultConfig(time.Duration(config.CacheLifetime) * time.Minute)
@@ -53,9 +51,8 @@ func NewPocketBase(config *DatabaseConfig, readonly bool) *PocketBase {
 	gob.Register([]*url.URL{})
 
 	pb := &PocketBase{
-		db:    db,
+		store: store,
 		cache: cache,
-		path:  path,
 	}
 
 	return pb
@@ -63,7 +60,7 @@ func NewPocketBase(config *DatabaseConfig, readonly bool) *PocketBase {
 
 // Close method closes database connection
 func (pb *PocketBase) Close() {
-	pb.db.Close()
+	pb.store.Close()
 }
 
 // LogStats method logs database stats every 10 seconds
@@ -95,33 +92,12 @@ func (pb *PocketBase) LogStats() {
 // Documents bucket contains full document of the package
 // Files bucket con
 func (pb *PocketBase) Init() {
-	pb.db.Update(func(tx *bolt.Tx) error {
-		global, _ := tx.CreateBucketIfNotExists([]byte("Globals"))
-		tx.CreateBucketIfNotExists([]byte("Packages"))
-		tx.CreateBucketIfNotExists([]byte("Marks"))
-		tx.CreateBucketIfNotExists([]byte("Documents"))
-		tx.CreateBucketIfNotExists([]byte("Files"))
-
-		defaultSequence := make([]byte, 4)
-		binary.LittleEndian.PutUint32(defaultSequence, 0)
-		global.Put([]byte("sequence"), defaultSequence)
-		return nil
-	})
+	pb.store.Init()
 }
 
 // IsInitialized method returns whether the database has initialized
 func (pb *PocketBase) IsInitialized() bool {
-	initialized := false
-	pb.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("Globals"))
-		if b != nil {
-			v := b.Get([]byte("sequence"))
-			initialized = v != nil
-		}
-		return nil
-	})
-
-	return initialized
+	return pb.store.IsInitialized()
 }
 
 // Check method checks redundancy for the buckets
@@ -202,9 +178,7 @@ func (pb *PocketBase) delCache(key string) {
 }
 
 // GetItemCount method returns the count of items in the bucket
-func (pb *PocketBase) GetItemCount(name string) int {
-	var count int
-
+func (pb *PocketBase) GetItemCount(name string) (count int) {
 	dec := pb.getCacheDecoder("count:" + name)
 	if dec != nil {
 		var cache int
@@ -215,37 +189,26 @@ func (pb *PocketBase) GetItemCount(name string) int {
 		}
 	}
 
-	pb.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(name))
-		c := b.Cursor()
-
-		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			count++
-		}
-
-		return nil
-	})
+	count = pb.store.GetItemCount(name)
 
 	pb.setCache("count:"+name, count)
-	return count
+	return
 }
 
 // GetStats method returns status of various buckets
-func (pb *PocketBase) GetStats() *DatabaseStats {
-	stats := &DatabaseStats{
+func (pb *PocketBase) GetStats() (stats *DatabaseStats) {
+	stats = &DatabaseStats{
 		Packages:  pb.GetItemCount("Packages"),
 		Marks:     pb.GetItemCount("Marks"),
 		Documents: pb.GetItemCount("Documents"),
 		Files:     pb.GetItemCount("Files"),
 	}
 
-	return stats
+	return
 }
 
 // GetSequence method returns current sequence of registry
-func (pb *PocketBase) GetSequence() int {
-	var sequence int
-
+func (pb *PocketBase) GetSequence() (sequence int) {
 	dec := pb.getCacheDecoder("global:sequence")
 	if dec != nil {
 		var cache int
@@ -256,29 +219,16 @@ func (pb *PocketBase) GetSequence() int {
 		}
 	}
 
-	pb.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("Globals"))
-		v := b.Get([]byte("sequence"))
-		sequence = int(binary.LittleEndian.Uint32(v))
-		return nil
-	})
+	sequence = pb.store.GetSequence()
 
 	pb.setCache("global:sequence", sequence)
 
-	return sequence
+	return
 }
 
 // SetSequence method sets current sequence of registry
 func (pb *PocketBase) SetSequence(seq int) {
-	pb.db.Update(func(tx *bolt.Tx) error {
-		global := tx.Bucket([]byte("Globals"))
-
-		byteSequence := make([]byte, 4)
-		binary.LittleEndian.PutUint32(byteSequence, uint32(seq))
-		global.Put([]byte("sequence"), byteSequence)
-
-		return nil
-	})
+	pb.store.SetSequence(seq)
 
 	pb.setCache("global:sequence", seq)
 }
@@ -302,17 +252,7 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 		}
 	}
 
-	pb.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte("Marks"))
-		c := b.Cursor()
-
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			if string(v) == condition {
-				count++
-			}
-		}
-		return nil
-	})
+	count = pb.store.GetCountOfMarks(condition)
 
 	pb.setCache("mark:"+condition, count)
 	return count
@@ -320,37 +260,11 @@ func (pb *PocketBase) GetCountOfMarks(cond bool) int {
 
 // GetIncompletePackages method returns a list of packages that are ready for queueing
 func (pb *PocketBase) GetIncompletePackages() []*BarePackage {
-	count := pb.GetCountOfMarks(false)
-	packages := make([]*BarePackage, count)
-
-	pb.db.View(func(tx *bolt.Tx) error {
-		packs := tx.Bucket([]byte("Packages"))
-		marks := tx.Bucket([]byte("Marks"))
-
-		i := 0
-		c := marks.Cursor()
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			if string(v) == MarkIncomplete {
-				revision := packs.Get(k)
-				packages[i] = &BarePackage{
-					ID:       string(k),
-					Revision: string(revision),
-				}
-				i++
-			}
-		}
-
-		return nil
-	})
-
-	return packages
+	return pb.store.GetIncompletePackages()
 }
 
 // GetRevision method returns a revision of document
 func (pb *PocketBase) GetRevision(id string) (rev string) {
-	rev = ""
-	key := []byte(id)
-
 	dec := pb.getCacheDecoder(id + ":rev")
 	if dec != nil {
 		var cache interface{}
@@ -361,15 +275,7 @@ func (pb *PocketBase) GetRevision(id string) (rev string) {
 		}
 	}
 
-	pb.db.View(func(tx *bolt.Tx) error {
-		packages := tx.Bucket([]byte("Packages"))
-		val := packages.Get(key)
-		if val != nil {
-			rev = string(val)
-		}
-
-		return nil
-	})
+	rev = pb.store.GetRevision(id)
 
 	if rev != "" {
 		pb.setCache(id+":rev", rev)
@@ -382,8 +288,6 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 	document = "{}"
 	filelist = nil
 
-	key := []byte(id)
-
 	dec := pb.getCacheDecoder(id)
 	if dec != nil {
 		var caches []interface{}
@@ -395,39 +299,21 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 		}
 	}
 
-	pb.db.View(func(tx *bolt.Tx) error {
-		documents := tx.Bucket([]byte("Documents"))
-		marks := tx.Bucket([]byte("Marks"))
-		files := tx.Bucket([]byte("Files"))
+	document, rawfiles, err := pb.store.GetDocument(id, withfiles)
+	if err != nil {
+		return
+	}
 
-		mark := marks.Get(key)
-		if mark == nil {
-			err = errors.New("Package does not exist")
-			return nil
+	if withfiles {
+		var buf bytes.Buffer
+		buf.Write(rawfiles)
+		dec = gob.NewDecoder(&buf)
+		decerr := dec.Decode(&filelist)
+		if decerr != nil {
+			err = fmt.Errorf("Internal error: %v", decerr)
+			return "", nil, nil
 		}
-
-		documentBytes := documents.Get(key)
-
-		if (documentBytes == nil || string(documentBytes) == "") && string(mark) == MarkIncomplete {
-			err = errors.New("Package has not been downloaded yet")
-			return nil
-		}
-
-		document = string(documentBytes)
-
-		if withfiles {
-			var buf bytes.Buffer
-			buf.Write(files.Get(key))
-			dec := gob.NewDecoder(&buf)
-			decerr := dec.Decode(&filelist)
-			if decerr != nil {
-				err = fmt.Errorf("Internal error: %v", decerr)
-				return nil
-			}
-		}
-
-		return nil
-	})
+	}
 
 	if document != "" && document != "{}" {
 		caches := []interface{}{
@@ -441,65 +327,23 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 }
 
 // GetAllFiles method returns {name: files} map
-func (pb *PocketBase) GetAllFiles() (all map[string][]*url.URL) {
-	all = map[string][]*url.URL{}
-
-	pb.db.View(func(tx *bolt.Tx) error {
-		files := tx.Bucket([]byte("Files"))
-		cursor := files.Cursor()
-
-		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
-			var filelist []*url.URL
-			var buf bytes.Buffer
-			buf.Write(v)
-			dec := gob.NewDecoder(&buf)
-			dec.Decode(&filelist)
-
-			all[string(k)] = filelist
-		}
-
-		return nil
-	})
-
-	return
+func (pb *PocketBase) GetAllFiles() map[string][]*url.URL {
+	return pb.store.GetAllFiles()
 }
 
 // PutPackage method inserts a package into the appropriate buckets
-func (pb *PocketBase) PutPackage(tx *bolt.Tx, id string, rev string, mark bool, overwrite bool) error {
+func (pb *PocketBase) PutPackage(tx transactionable, id string, rev string, mark bool, overwrite bool) error {
 	defer pb.delCache("count:Packages")
 	defer pb.delCache("count:Marks")
 	defer pb.delCache("mark:0")
 	defer pb.delCache("mark:1")
 
-	packages := tx.Bucket([]byte("Packages"))
-	marks := tx.Bucket([]byte("Marks"))
-	key := []byte(id)
-
-	// Check if package's already exists
-	if value := packages.Get(key); value != nil && !overwrite {
-		return nil
-	}
-
-	err := packages.Put(key, []byte(rev))
-	if err != nil {
-		return err
-	}
-
-	marked := []byte(MarkIncomplete)
-	if mark {
-		marked = []byte(MarkComplete)
-	}
-	err = marks.Put(key, marked)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return pb.store.PutPackage(tx, id, rev, mark, overwrite)
 }
 
 // PutPackages method is a bulk method of PutPackage
 func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
-	tx, _ := pb.db.Begin(true)
+	tx := pb.store.AcquireTx()
 	defer tx.Rollback()
 
 	for _, doc := range allDocs {
@@ -516,8 +360,6 @@ func (pb *PocketBase) PutPackages(allDocs []*BarePackage) {
 
 // DeletePackage method deletes a package
 func (pb *PocketBase) DeletePackage(name string) {
-	key := []byte(name)
-
 	defer pb.delCache("count:Packages")
 	defer pb.delCache("count:Documents")
 	defer pb.delCache("count:Files")
@@ -525,25 +367,11 @@ func (pb *PocketBase) DeletePackage(name string) {
 	defer pb.delCache("mark:0")
 	defer pb.delCache("mark:1")
 
-	pb.db.Update(func(tx *bolt.Tx) error {
-		packages := tx.Bucket([]byte("Packages"))
-		documents := tx.Bucket([]byte("Documents"))
-		files := tx.Bucket([]byte("Files"))
-		marks := tx.Bucket([]byte("Marks"))
-
-		packages.Delete(key)
-		documents.Delete(key)
-		files.Delete(key)
-		marks.Delete(key)
-
-		return nil
-	})
+	pb.store.DeletePackage(name)
 }
 
 // PutCompleted method inserts a completed package into the appropriate buckets
-func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev string, downloads []*url.URL) bool {
-	tx, _ := pb.db.Begin(true)
-	defer tx.Rollback()
+func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev string, downloads []*url.URL) (succeed bool) {
 	defer pb.delCache(document)
 	defer pb.delCache(document + ":rev")
 	defer pb.delCache("count:Packages")
@@ -551,47 +379,15 @@ func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev strin
 	defer pb.delCache("count:Files")
 	defer pb.delCache("count:Marks")
 
-	key := []byte(pack.ID)
+	tx := pb.store.AcquireTx()
+	defer tx.Rollback()
 
-	packages := tx.Bucket([]byte("Packages"))
-	documents := tx.Bucket([]byte("Documents"))
-	files := tx.Bucket([]byte("Files"))
-	marks := tx.Bucket([]byte("Marks"))
+	succeed = pb.store.PutCompleted(tx, pack, document, rev, downloads)
 
-	// if revision does not match
-	if pack.Revision != rev {
-		err := packages.Put(key, []byte(rev))
-		if err != nil {
-			return false
-		}
+	if err := tx.Commit(); err != nil {
+		succeed = false
+		return
 	}
 
-	err := documents.Put(key, []byte(document))
-	if err != nil {
-		return false
-	}
-
-	// encode downloads(interface) directly into a byte array
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(downloads)
-	if err != nil {
-		return false
-	}
-
-	err = files.Put(key, buf.Bytes())
-	if err != nil {
-		return false
-	}
-
-	err = marks.Put(key, []byte(MarkComplete))
-	if err != nil {
-		return false
-	}
-
-	if err = tx.Commit(); err != nil {
-		return false
-	}
-
-	return true
+	return
 }
