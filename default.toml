@@ -1,6 +1,12 @@
 [database]
-# database path (bolt)
+# database type (bolt, gorm)
+type = "bolt"
+# database path
 path = "npm.db"
+# example usage for gorm (http://jinzhu.me/gorm/database.html#connecting-to-a-database):
+# path = ["mysql", "user:password@host/dbname?charset=utf8&parseTime=True"] # mysql
+# path = ["postgres", "host=host user=username dbname=pocketnpm sslmode=disable password=mypassword"]
+
 # max in-memory cache size in MB (0 = unlimited)
 max_cache_size = 2048
 # in-memory cache eviction time in minutes
