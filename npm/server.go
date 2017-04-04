@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -116,7 +117,7 @@ func (server *PocketServer) raiseNotFound(ctx *fasthttp.RequestCtx) {
 
 func (server *PocketServer) handlePanic(ctx *fasthttp.RequestCtx, panic interface{}) {
 	ctx.SetStatusCode(500)
-	log.Debugf("%v", panic)
+	log.Debugf("%v: %s", panic, debug.Stack())
 }
 
 func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interface{}) {
@@ -222,12 +223,16 @@ func (server *PocketServer) getDocument(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetContentType("application/json")
 	ctx.Response.Header.Set("Content-Length", size)
-	fmt.Fprint(ctx, doc)
+	ctx.WriteString(doc)
 }
 
 func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
 	name, version := ctx.UserValue("name").(string), ctx.UserValue("version").(string)
 	doc := server.getDocumentByName(ctx, name)
+
+	if doc == "" {
+		return
+	}
 
 	var jsonDoc interface{}
 	ffjson.Unmarshal([]byte(doc), &jsonDoc)
