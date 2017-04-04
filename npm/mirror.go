@@ -1,15 +1,18 @@
 package npm
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
+	pbar "gopkg.in/cheggaaa/pb.v1"
 )
 
 type MirrorClient struct {
@@ -211,7 +214,7 @@ func (c *MirrorClient) Update() {
 	}
 }
 
-func (c *MirrorClient) Run(onetime bool) {
+func (c *MirrorClient) initialize() {
 	if !c.db.IsInitialized() {
 		log.Debug("Database has not been initialized. Init..")
 		c.db.Init()
@@ -222,6 +225,10 @@ func (c *MirrorClient) Run(onetime bool) {
 	if !c.db.IsInitialized() {
 		log.Fatal("Failed to initialize database")
 	}
+}
+
+func (c *MirrorClient) Run(onetime bool) {
+	c.initialize()
 
 	log.Debug("Loading stats..")
 	stats := c.db.GetStats()
@@ -269,4 +276,40 @@ func (c *MirrorClient) Run(onetime bool) {
 
 	exit := make(chan struct{}, 1)
 	<-exit
+}
+
+func (c *MirrorClient) Check() {
+	c.initialize()
+
+	// Load all files
+	log.Infof("Loading all files")
+	files := c.db.GetAllFiles()
+
+	var errs []string
+
+	count := len(files)
+	log.Infof("Checking files for %d packages", count)
+	bar := pbar.StartNew(count)
+
+	// Check file exists
+	for name, items := range files {
+		bar.Total += int64(len(items))
+		for _, item := range items {
+			path := getLocalPath(c.config.Path, item.Path)
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				errstr := fmt.Sprintf("%s: %s", name, path)
+				errs = append(errs, errstr)
+			}
+
+			bar.Increment()
+		}
+		bar.Increment()
+	}
+	bar.Finish()
+
+	// Write errors
+	log.Debugf("Creating missing report of file checks: report.txt")
+	out, _ := os.Create("report.log")
+	defer out.Close()
+	out.WriteString(strings.Join(errs[:], "\n"))
 }

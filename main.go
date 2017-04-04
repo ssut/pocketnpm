@@ -103,7 +103,7 @@ func main() {
 				conf := getConfig(c.String("config"))
 
 				// global database frontend
-				pb := db.NewPocketBase(&conf.DB)
+				pb := db.NewPocketBase(&conf.DB, false)
 
 				// database status
 				if c.Bool("watch-status") {
@@ -122,6 +122,28 @@ func main() {
 
 				client := npm.NewMirrorClient(pb, &conf.Mirror)
 				client.Run(c.Bool("onetime"))
+				return nil
+			},
+		},
+		{
+			Name:  "check",
+			Usage: "Check consistency between database and on-disk data",
+			Flags: []cli.Flag{
+				cli.StringFlag{Name: "config, c", Value: "config.toml"},
+				cli.BoolFlag{Name: "fix", Usage: "Fix errors (not implemented)"},
+			},
+			Action: func(c *cli.Context) error {
+				conf := getConfig(c.String("config"))
+
+				// global database frontend
+				pb := db.NewPocketBase(&conf.DB, true)
+				// database redundancy check
+				pb.Check()
+
+				// file check
+				client := npm.NewMirrorClient(pb, &conf.Mirror)
+				client.Check()
+
 				return nil
 			},
 		},

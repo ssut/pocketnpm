@@ -4,18 +4,20 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"encoding/binary"
 
 	"net/url"
 
+	"bytes"
+	"encoding/gob"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/allegro/bigcache"
 	"github.com/boltdb/bolt"
-
-	"bytes"
-	"encoding/gob"
+	pbar "gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/ssut/pocketnpm/log"
 )
@@ -28,9 +30,14 @@ type PocketBase struct {
 }
 
 // NewPocketBase creates a new PocketBase object
-func NewPocketBase(config *DatabaseConfig) *PocketBase {
+func NewPocketBase(config *DatabaseConfig, readonly bool) *PocketBase {
 	path, _ := filepath.Abs(config.Path)
-	db, err := bolt.Open(path, 0600, nil)
+	dbConfig := &bolt.Options{}
+	if readonly {
+		dbConfig.ReadOnly = true
+	}
+
+	db, err := bolt.Open(path, 0600, dbConfig)
 	if err != nil {
 		log.Fatalf("Failed to load database file: %v", err)
 	}
@@ -115,6 +122,52 @@ func (pb *PocketBase) IsInitialized() bool {
 	})
 
 	return initialized
+}
+
+// Check method checks redundancy for the buckets
+func (pb *PocketBase) Check() {
+	tx, err := pb.db.Begin(false)
+	if err != nil {
+		log.Panic(err)
+	}
+	defer tx.Commit()
+
+	packages := tx.Bucket([]byte("Packages"))
+	documents := tx.Bucket([]byte("Documents"))
+	files := tx.Bucket([]byte("Files"))
+	marks := tx.Bucket([]byte("Marks"))
+
+	// 1. get all marked items
+	var availables [][]byte
+	marksCursor := marks.Cursor()
+
+	for k, v := marksCursor.First(); k != nil; k, v = marksCursor.Next() {
+		if string(v) == MarkComplete {
+			availables = append(availables, k)
+		}
+	}
+
+	var inconsistencies []string
+
+	// 2. check marked items have a revision, a document, and a file
+	count := len(availables)
+	log.Infof("Checking consistency for %d items", count)
+	bar := pbar.StartNew(count)
+	for _, key := range availables {
+		if rev := packages.Get(key); rev == nil || len(rev) == 0 {
+			inconsistencies = append(inconsistencies, string(key)+" (rev)")
+		} else if doc := documents.Get(key); doc == nil || len(doc) == 0 {
+			inconsistencies = append(inconsistencies, string(key)+" (doc)")
+		} else if file := files.Get(key); file == nil {
+			inconsistencies = append(inconsistencies, string(key)+" (file)")
+		}
+		bar.Increment()
+	}
+	bar.Finish()
+
+	// 3. print errors
+	log.Infof("%d errors found in database", len(inconsistencies))
+	log.Error(strings.Join(inconsistencies[:], ", "))
 }
 
 func (pb *PocketBase) getCacheDecoder(key string) *gob.Decoder {
@@ -383,6 +436,30 @@ func (pb *PocketBase) GetDocument(id string, withfiles bool) (document string, f
 		}
 		pb.setCache(id, caches)
 	}
+
+	return
+}
+
+// GetAllFiles method returns {name: files} map
+func (pb *PocketBase) GetAllFiles() (all map[string][]*url.URL) {
+	all = map[string][]*url.URL{}
+
+	pb.db.View(func(tx *bolt.Tx) error {
+		files := tx.Bucket([]byte("Files"))
+		cursor := files.Cursor()
+
+		for k, v := cursor.First(); k != nil; k, v = cursor.Next() {
+			var filelist []*url.URL
+			var buf bytes.Buffer
+			buf.Write(v)
+			dec := gob.NewDecoder(&buf)
+			dec.Decode(&filelist)
+
+			all[string(k)] = filelist
+		}
+
+		return nil
+	})
 
 	return
 }
