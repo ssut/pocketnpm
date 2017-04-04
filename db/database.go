@@ -16,6 +16,8 @@ import (
 	"github.com/boltdb/bolt"
 	pbar "gopkg.in/cheggaaa/pb.v1"
 
+	"encoding/base64"
+
 	"github.com/ssut/pocketnpm/log"
 )
 
@@ -390,4 +392,81 @@ func (pb *PocketBase) PutCompleted(pack *BarePackage, document string, rev strin
 	}
 
 	return
+}
+
+func (pb *PocketBase) Migrate(boltPath string) {
+	if !pb.IsInitialized() {
+		log.Info("Database has not been initialized. Init..")
+		pb.Init()
+	} else {
+		log.Info("Database has already been initialized.")
+	}
+
+	if !pb.IsInitialized() {
+		log.Fatalf("Failed to initialize database")
+	}
+
+	config := &DatabaseConfig{
+		Type: "bolt",
+		Path: boltPath,
+	}
+	boltStore := newBoltStore(config)
+	if err := boltStore.Connect(); err != nil {
+		log.Fatalf("Failed to open bolt database file: %v", err)
+	}
+	selfStore := pb.store.(*gormStore)
+
+	// acquire transactions
+	selfTx := selfStore.db
+	tx := boltStore.AcquireTx().(*bolt.Tx)
+	defer selfTx.Rollback()
+	defer tx.Rollback()
+
+	// set max allowed packet size
+	selfTx.Raw("SET GLOBAL max_allowed_packet = 1024 * 1048576;")
+
+	count := boltStore.GetItemCount("Packages")
+	seq := boltStore.GetSequence()
+
+	packages := tx.Bucket([]byte("Packages"))
+	documents := tx.Bucket([]byte("Documents"))
+	files := tx.Bucket([]byte("Files"))
+	marks := tx.Bucket([]byte("Marks"))
+
+	cursor := packages.Cursor()
+
+	bar := pbar.StartNew(count)
+	for id, rev := cursor.First(); id != nil; id, rev = cursor.Next() {
+	retry:
+		idStr := string(id)
+		doc := string(documents.Get(id))
+		files := base64.StdEncoding.EncodeToString(files.Get(id))
+		markstr := string(marks.Get(id))
+		marked := false
+		if markstr == MarkComplete {
+			marked = true
+		}
+
+		pack := gormPackage{
+			ID:       idStr,
+			Revision: string(rev),
+			Document: doc,
+			Marked:   marked,
+			Files:    files,
+		}
+		err := selfTx.Where(gormPackage{ID: idStr}).Assign(pack).FirstOrCreate(&pack).Error
+		if err != nil {
+			log.Warnf("Failed to insert a package: %v - retrying", err)
+			goto retry
+		}
+
+		bar.Increment()
+	}
+	bar.Finish()
+
+	pb.SetSequence(seq)
+	if err := selfTx.Commit(); err != nil {
+		log.Errorf("Failed to commit transaction: %v", err)
+	}
+	tx.Commit()
 }

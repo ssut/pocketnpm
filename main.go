@@ -126,6 +126,27 @@ func main() {
 			},
 		},
 		{
+			Name:  "migrate",
+			Usage: "Migrate the database from boltdb to gorm",
+			Flags: []cli.Flag{
+				cli.StringFlag{Name: "config, c", Value: "config.toml"},
+				cli.StringFlag{Name: "bolt", Usage: "location of bolt database file", Value: "npm.db"},
+			},
+			Action: func(c *cli.Context) error {
+				conf := getConfig(c.String("config"))
+				if conf.DB.Type != "gorm" {
+					return cli.NewExitError("This only works when the type is set to gorm", -1)
+				}
+
+				// global database frontend
+				pb := db.NewPocketBase(&conf.DB)
+				boltPath, _ := filepath.Abs(c.String("bolt"))
+				pb.Migrate(boltPath)
+
+				return nil
+			},
+		},
+		{
 			Name:  "check",
 			Usage: "Check consistency between database and on-disk data",
 			Flags: []cli.Flag{
