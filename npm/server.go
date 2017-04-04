@@ -2,7 +2,6 @@ package npm
 
 import (
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -83,6 +82,7 @@ func (server *PocketServer) addRoutes() {
 	server.router.GET("/:name", server.logging(server.getDocument))
 	server.router.GET("/:name/:version", server.logging(server.getDocumentByVersion))
 	server.router.GET("/:name/:version/:tarball", server.logging(server.downloadPackage))
+	server.router.GET("/:name/:version/:tarball/:extra", server.logging(server.downloadPackage))
 	server.router.NotFound = server.raiseNotFound
 	server.router.PanicHandler = server.handlePanic
 }
@@ -130,15 +130,13 @@ func (server *PocketServer) writeJSON(ctx *fasthttp.RequestCtx, content interfac
 }
 
 func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name string) {
-	open, err := os.Open(path)
-	defer open.Close()
+	stat, err := os.Stat(path)
 	if err != nil {
 		log.Debug(err)
 		ctx.SetStatusCode(404)
 		return
 	}
 
-	stat, _ := open.Stat()
 	size := strconv.FormatInt(stat.Size(), 10)
 
 	ctx.SetContentType("application/octet-stream")
@@ -151,8 +149,7 @@ func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name
 		return
 	}
 
-	open.Seek(0, 0)
-	io.Copy(ctx, open)
+	ctx.SendFile(path)
 }
 
 func (server *PocketServer) replaceAttachments(document string) string {
@@ -228,6 +225,12 @@ func (server *PocketServer) getDocument(ctx *fasthttp.RequestCtx) {
 
 func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
 	name, version := ctx.UserValue("name").(string), ctx.UserValue("version").(string)
+	if strings.HasPrefix(name, "@") && !strings.Contains(name, "/") {
+		ctx.SetUserValue("name", fmt.Sprintf("%s/%s", name, version))
+		server.getDocument(ctx)
+		return
+	}
+
 	doc := server.getDocumentByName(ctx, name)
 
 	if doc == "" {
@@ -284,11 +287,26 @@ func (server *PocketServer) getDocumentByVersion(ctx *fasthttp.RequestCtx) {
 }
 
 func (server *PocketServer) downloadPackage(ctx *fasthttp.RequestCtx) {
-	if ctx.UserValue("version") != "-" {
+	name, version := ctx.UserValue("name").(string), ctx.UserValue("version").(string)
+	tarball, extra := ctx.UserValue("tarball").(string), ctx.UserValue("extra")
+
+	if strings.HasPrefix(name, "@") && extra == nil {
+		ctx.SetUserValue("name", fmt.Sprintf("%s/%s", name, version))
+		ctx.SetUserValue("version", tarball)
+		server.getDocumentByVersion(ctx)
+		return
+	}
+
+	if extra != nil {
+		name = fmt.Sprintf("%s/%s", name, version)
+		version = tarball
+		tarball = extra.(string)
+	}
+
+	if version != "-" {
 		server.raiseNotFound(ctx)
 		return
 	}
-	name, tarball := ctx.UserValue("name").(string), ctx.UserValue("tarball").(string)
 	// Illegal access
 	if strings.Contains(name, "..") || strings.Contains(tarball, "..") {
 		server.raiseNotFound(ctx)
