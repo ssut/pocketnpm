@@ -4,7 +4,7 @@ type = "bolt"
 # database path
 path = "npm.db"
 # example usage for gorm (http://jinzhu.me/gorm/database.html#connecting-to-a-database):
-# path = ["mysql", "user:password@host/dbname?charset=utf8&parseTime=True"] # mysql
+# path = ["mysql", "user:password@tcp(host:port)/dbname?charset=utf8mb4&parseTime=True"] # mysql
 # path = ["postgres", "host=host user=username dbname=pocketnpm sslmode=disable password=mypassword"]
 
 # max in-memory cache size in MB (0 = unlimited)

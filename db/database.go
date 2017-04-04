@@ -437,7 +437,6 @@ func (pb *PocketBase) Migrate(boltPath string) {
 
 	bar := pbar.StartNew(count)
 	for id, rev := cursor.First(); id != nil; id, rev = cursor.Next() {
-	retry:
 		idStr := string(id)
 		doc := string(documents.Get(id))
 		files := base64.StdEncoding.EncodeToString(files.Get(id))
@@ -456,8 +455,7 @@ func (pb *PocketBase) Migrate(boltPath string) {
 		}
 		err := selfTx.Where(gormPackage{ID: idStr}).Assign(pack).FirstOrCreate(&pack).Error
 		if err != nil {
-			log.Warnf("Failed to insert a package: %v - retrying", err)
-			goto retry
+			log.Warnf("Failed to insert a package: %s %v", idStr, err)
 		}
 
 		bar.Increment()

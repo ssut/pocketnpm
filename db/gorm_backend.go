@@ -29,9 +29,9 @@ type gormGlobal struct {
 type gormPackage struct {
 	ID       string `gorm:"primary_key"`
 	Revision string
-	Document string `sql:"type:text"`
+	Document string `sql:"type:mediumtext"`
 	Marked   bool   `gorm:"index"`
-	Files    string `sql:"type:text"`
+	Files    string `sql:"type:mediumtext"`
 }
 
 type gormTx struct {
