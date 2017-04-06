@@ -99,6 +99,7 @@ func (c *MirrorClient) Start() {
 		for {
 			result, done := <-resultQueue
 			if !done {
+				wg.Done()
 				return
 			}
 
@@ -109,6 +110,7 @@ func (c *MirrorClient) Start() {
 				log.WithFields(logrus.Fields{
 					"worker": result.WorkerID,
 				}).Info("Deleted: %s", result.Package.ID)
+				wg.Done()
 				continue
 			}
 
