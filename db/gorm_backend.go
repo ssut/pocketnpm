@@ -221,14 +221,21 @@ func (store *gormStore) AcquireTx() transactionable {
 func (store *gormStore) PutPackage(tr transactionable, id string, rev string, mark bool, overwrite bool) error {
 	tx := tr.(*gormTx).Tx
 
-	pack := gormPackage{
-		ID:       id,
-		Revision: rev,
-		Marked:   mark,
-	}
-	err := tx.Where(gormPackage{ID: id}).Assign(pack).FirstOrCreate(&pack).Error
-	if err != nil {
-		return fmt.Errorf("Failed to execute first-or-create method: %v", err)
+	var existingPack gormPackage
+	if tx.Where("id = ?", id).First(&existingPack).RecordNotFound() {
+		pack := gormPackage{
+			ID:       id,
+			Revision: rev,
+			Marked:   mark,
+		}
+		err := tx.Create(&pack).Error
+		if err != nil {
+			return fmt.Errorf("Failed to create: %s %v", id, err)
+		}
+	} else {
+		existingPack.Revision = rev
+		existingPack.Marked = mark
+		tx.Save(&existingPack)
 	}
 
 	return nil
