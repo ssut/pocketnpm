@@ -109,7 +109,7 @@ func (c *MirrorClient) Start() {
 				db.DeletePackage(result.Package.ID)
 				log.WithFields(logrus.Fields{
 					"worker": result.WorkerID,
-				}).Info("Deleted: %s", result.Package.ID)
+				}).Infof("Deleted: %s", result.Package.ID)
 				wg.Done()
 				continue
 			}
@@ -161,6 +161,7 @@ func (c *MirrorClient) Start() {
 	wg.Wait()
 
 	// Wait for all workers complete
+	log.Debugf("Stopping %d workers", len(workers))
 	for _, worker := range workers {
 		wg.Add(1)
 		worker.Stop()

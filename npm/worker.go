@@ -118,7 +118,6 @@ func (w *MirrorWorker) Start() {
 					WorkerID:         w.ID,
 				}
 			case <-w.QuitChan:
-				log.Printf("Worker %d Stopping", w.ID)
 				w.WaitGroup.Done()
 				return
 			}
