@@ -255,10 +255,7 @@ func (store *gormStore) PutCompleted(tr transactionable, pack *BarePackage, docu
 		return false
 	}
 
-	// if revision does not match
-	if pack.Revision != rev {
-		item.Revision = rev
-	}
+	item.Revision = rev
 	item.Document = document
 	item.Marked = true
 
