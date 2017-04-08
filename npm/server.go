@@ -176,10 +176,11 @@ func (server *PocketServer) replaceAttachments(document string) string {
 
 func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name string) string {
 	rev := server.db.GetRevision(name)
-	ctx.Response.Header.Set("ETag", rev)
+	etag := fmt.Sprintf(`"%s"`, rev)
+	ctx.Response.Header.Set("ETag", etag)
 
 	if cacheHeader := ctx.Request.Header.Peek("If-None-Match"); cacheHeader != nil {
-		if string(cacheHeader) == rev {
+		if string(cacheHeader) == etag {
 			ctx.SetStatusCode(304)
 			return ""
 		}
