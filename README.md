@@ -95,9 +95,9 @@ You need to run pocketnpm on a case-sensitive filesystem.
 
 macOS natively does this OK even though the filesystem is not strictly case-sensitive and pocketnpm will work fine when running on macOS. However, tarring a pocketnpm data directory and moving it to, e.g. Linux with a case-sensitive filesystem will lead to inconsistencies.
 
-## SSDs are highly recommended for database storage
+### SSDs are highly recommended for the boltdb backend
 
-SSDs are highly recommended for database storage, just like any other database. Using SSDs for data storage is good as well but the performance depends heavily on the database storage.
+SSDs are highly recommended for the boltdb backend, just like any other database. Using SSDs for data storage is good as well but the performance depends heavily on the database storage.
 
 ### You can't clone the mirror itself
 
