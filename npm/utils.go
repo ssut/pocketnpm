@@ -34,9 +34,15 @@ func getLocalPath(base string, path string) string {
 }
 
 func getDistributions(document string) []*distribution {
+	defer func() {
+		if r := recover(); r != nil {
+			return
+		}
+	}()
+
 	var doc interface{}
 	err := ffjson.Unmarshal([]byte(document), &doc)
-	if err != nil {
+	if err != nil || doc == nil {
 		return nil
 	}
 
