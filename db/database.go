@@ -11,9 +11,9 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/allegro/bigcache"
 	"github.com/boltdb/bolt"
+	"github.com/sirupsen/logrus"
 	pbar "gopkg.in/cheggaaa/pb.v1"
 
 	"encoding/base64"

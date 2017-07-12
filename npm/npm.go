@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/pquerna/ffjson/ffjson"
+	"github.com/sirupsen/logrus"
 	"github.com/valyala/fasthttp"
 
 	"path"

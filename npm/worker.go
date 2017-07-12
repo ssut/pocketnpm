@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/pquerna/ffjson/ffjson"
+	"github.com/sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
 )
