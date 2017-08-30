@@ -49,7 +49,7 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 			logger.Formatter = &logrus.TextFormatter{
 				FullTimestamp:  true,
 				DisableColors:  true,
-				QuoteCharacter: "",
+				QuoteEmptyFields: true,
 			}
 		} else {
 			log.Warnf("Failed to open log file: %s", logPath)
