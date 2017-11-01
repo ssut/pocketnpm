@@ -70,6 +70,42 @@ func TestGetDistributions(t *testing.T) {
 	}
 }
 
+func TestCheckValidDist(t *testing.T) {
+	tests := []struct {
+		dist     *distribution
+		expected bool
+	}{
+		{
+			dist: &distribution{
+				SHA1:    "aaa",
+				Tarball: "",
+			},
+			expected: false,
+		},
+		{
+			dist: &distribution{
+				SHA1:    "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+				Tarball: "",
+			},
+			expected: false,
+		},
+		{
+			dist: &distribution{
+				SHA1:    "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+				Tarball: "https://registry.npmjs.org/aa/-/aa.tgz",
+			},
+			expected: true,
+		},
+	}
+
+	for i, test := range tests {
+		actual := checkValidDist(test.dist)
+		if actual != test.expected {
+			t.Errorf("checkValidDist: expected %s actual %s", test.expected, actual)
+		}
+	}
+}
+
 func TestHashSHA1(t *testing.T) {
 	expected := "242606355b6a6d18a5381b1c58aaf23e9e961851"
 	appFS := afero.NewMemMapFs()

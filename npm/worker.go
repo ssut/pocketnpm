@@ -102,11 +102,13 @@ func (w *MirrorWorker) Start() {
 				for _, dist := range distributions {
 					file, _ := url.Parse(dist.Tarball)
 
-					dist.Completed = w.npmClient.Download(file, dist.SHA1)
-					if !dist.Completed {
-						log.WithFields(logrus.Fields{
-							"ID": work.ID,
-						}).Warnf("Failed to download: %s", file.Path)
+					if checkValidDist(dist) {
+						dist.Completed = w.npmClient.Download(file, dist.SHA1)
+						if !dist.Completed {
+							log.WithFields(logrus.Fields{
+								"ID": work.ID,
+							}).Warnf("Failed to download: %s", file.Path)
+						}
 					}
 				}
 

@@ -61,6 +61,18 @@ func getDistributions(document string) []*distribution {
 	return distributions
 }
 
+func checkValidDist(dist *distribution) bool {
+	// check the length of sha1 checksum
+	if len(dist.SHA1) < 40 {
+		return false
+	}
+	// check the extension of tarball path
+	if strings.HasSuffix(dist.Tarball, ".tgz") || strings.HasSuffix(dist.Tarball, ".tar") {
+		return true
+	}
+	return false
+}
+
 func hashSHA1(f file) (sha1str string, err error) {
 	hash := sha1.New()
 	if _, err = io.Copy(hash, f); err != nil {
