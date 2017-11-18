@@ -9,10 +9,8 @@ const (
 
 // DatabaseConfig defines config for database
 type DatabaseConfig struct {
-	Type          string      `toml:"type"`
-	Path          interface{} `toml:"path"`
-	MaxCacheSize  int         `toml:"max_cache_size"`
-	CacheLifetime int         `toml:"cache_lifetime"`
+	Driver string `toml:"driver"`
+	Source string `toml:"source"`
 }
 
 // DatabaseStats represents the count of each bucket
@@ -53,13 +51,3 @@ type PocketStore interface {
 	DeletePackage(string)
 	PutCompleted(transactionable, *BarePackage, string, string, []*url.URL) bool
 }
-
-// StoreType represents the type for database store
-type StoreType int
-
-const (
-	// BoltStore uses boltdb as a database backend
-	BoltStore StoreType = 1 << iota
-	// GormStore uses gorm as a database backend controller
-	GormStore
-)

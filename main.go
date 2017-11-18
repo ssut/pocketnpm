@@ -10,10 +10,13 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/BurntSushi/toml"
-	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
 	"github.com/ssut/pocketnpm/npm"
 	"github.com/urfave/cli"
+)
+
+var (
+	VERSION = "SELFBUILD"
 )
 
 func getConfig(path string) *PocketConfig {
@@ -38,7 +41,7 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "pocketnpm"
 	app.Usage = "A simple but fast npm mirror client & server"
-	app.Version = Version
+	app.Version = VERSION
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{Name: "debug, d"},
 		cli.BoolFlag{Name: "profile, p", Usage: "activate pprof on port 18080 for profiling goroutines"},
@@ -91,24 +94,18 @@ func main() {
 		{
 			Name:    "start",
 			Aliases: []string{"s"},
-			Usage:   "Start PocketNPM with continuous mirroring mode",
+			Usage:   "Start PocketNPM",
 			Flags: []cli.Flag{
 				cli.StringFlag{Name: "config, c", Value: "config.toml"},
-				cli.BoolFlag{Name: "only-server", Usage: "Disable mirroring and start only registry server"},
+				cli.BoolFlag{Name: "only-server", Usage: "Disable mirroring and start only registry server (for air-gapped network)"},
 				cli.BoolFlag{Name: "onetime, o", Usage: "One-time mirroring (disable continuous mirroring)"},
-				cli.BoolFlag{Name: "server, s", Usage: "Start NPM registry server"},
-				cli.BoolFlag{Name: "watch-status, w", Usage: "Watch PocketNPM status"},
+				cli.BoolFlag{Name: "server, s", Usage: "Start NPM registry server (required to serve)"},
 			},
 			Action: func(c *cli.Context) error {
 				conf := getConfig(c.String("config"))
 
 				// global database frontend
-				pb := db.NewPocketBase(&conf.DB)
-
-				// database status
-				if c.Bool("watch-status") {
-					go pb.LogStats()
-				}
+				s := store.NewStore(&conf.DB)
 
 				// webserver
 				if c.Bool("server") {
@@ -122,49 +119,6 @@ func main() {
 
 				client := npm.NewMirrorClient(pb, &conf.Mirror)
 				client.Run(c.Bool("onetime"))
-				return nil
-			},
-		},
-		{
-			Name:  "migrate",
-			Usage: "Migrate the database from boltdb to gorm",
-			Flags: []cli.Flag{
-				cli.StringFlag{Name: "config, c", Value: "config.toml"},
-				cli.StringFlag{Name: "bolt", Usage: "location of bolt database file", Value: "npm.db"},
-			},
-			Action: func(c *cli.Context) error {
-				conf := getConfig(c.String("config"))
-				if conf.DB.Type != "gorm" {
-					return cli.NewExitError("This only works when the type is set to gorm", -1)
-				}
-
-				// global database frontend
-				pb := db.NewPocketBase(&conf.DB)
-				boltPath, _ := filepath.Abs(c.String("bolt"))
-				pb.Migrate(boltPath)
-
-				return nil
-			},
-		},
-		{
-			Name:  "check",
-			Usage: "Check consistency between database and on-disk data",
-			Flags: []cli.Flag{
-				cli.StringFlag{Name: "config, c", Value: "config.toml"},
-				cli.BoolFlag{Name: "fix", Usage: "Fix errors (not implemented)"},
-			},
-			Action: func(c *cli.Context) error {
-				conf := getConfig(c.String("config"))
-
-				// global database frontend
-				pb := db.NewPocketBase(&conf.DB)
-				// database redundancy check
-				pb.Check()
-
-				// file check
-				client := npm.NewMirrorClient(pb, &conf.Mirror)
-				client.Check()
-
 				return nil
 			},
 		},
