@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +9,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/BurntSushi/toml"
+	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
 	"github.com/ssut/pocketnpm/npm"
 	"github.com/urfave/cli"
@@ -19,20 +19,14 @@ var (
 	VERSION = "SELFBUILD"
 )
 
-func getConfig(path string) *PocketConfig {
+func getConfig(path string) (*PocketConfig, error) {
 	confPath, _ := filepath.Abs(path)
-	b, err := ioutil.ReadFile(confPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	var conf PocketConfig
-	if _, err := toml.Decode(string(b), &conf); err != nil {
-		log.Fatalf("Error in config file: %s", err)
-
+	if _, err := toml.DecodeFile(confPath, &conf); err != nil {
+		return nil, err
 	}
 
-	return &conf
+	return &conf, nil
 }
 
 func main() {
@@ -43,16 +37,25 @@ func main() {
 	app.Usage = "A simple but fast npm mirror client & server"
 	app.Version = VERSION
 	app.Flags = []cli.Flag{
-		cli.BoolFlag{Name: "debug, d"},
+		cli.StringFlag{Name: "config, c", Value: "config.toml"},
+		cli.BoolFlag{Name: "verbose"},
 		cli.BoolFlag{Name: "profile, p", Usage: "activate pprof on port 18080 for profiling goroutines"},
 		cli.IntFlag{Name: "cpus", Value: runtime.NumCPU()},
 	}
 	app.EnableBashCompletion = true
 
+	var config *PocketConfig
+	var store *db.Store
+	defer func() {
+		if store != nil {
+			store.Close()
+		}
+	}()
+
 	app.Before = func(c *cli.Context) error {
-		if c.GlobalBool("debug") {
+		if c.GlobalBool("verbose") {
 			log.SetDebug()
-			log.Debug("Activated debug mode")
+			log.Debug("Increase log verbosity")
 		}
 
 		if c.GlobalBool("profile") {
@@ -62,6 +65,25 @@ func main() {
 
 		cpus := c.GlobalInt("cpus")
 		runtime.GOMAXPROCS(cpus)
+
+		if cfg := c.GlobalString("config"); cfg != "" {
+			log.Info("Loading configurations")
+			var err error
+			config, err = getConfig(c.GlobalString("config"))
+			if err != nil {
+				log.Panic(err)
+			}
+
+			log.Info("Preparing database")
+			store = db.NewStore(&config.DB)
+			err = store.Connect()
+			if err != nil {
+				log.Panic(err)
+			}
+
+		} else if cfg == "" {
+			log.Warn("Config file not provided")
+		}
 
 		return nil
 	}
@@ -92,33 +114,38 @@ func main() {
 			},
 		},
 		{
-			Name:    "start",
-			Aliases: []string{"s"},
-			Usage:   "Start PocketNPM",
+			Name:    "mirror",
+			Aliases: []string{"m"},
+			Usage:   "Start mirroring",
 			Flags: []cli.Flag{
-				cli.StringFlag{Name: "config, c", Value: "config.toml"},
-				cli.BoolFlag{Name: "only-server", Usage: "Disable mirroring and start only registry server (for air-gapped network)"},
 				cli.BoolFlag{Name: "onetime, o", Usage: "One-time mirroring (disable continuous mirroring)"},
-				cli.BoolFlag{Name: "server, s", Usage: "Start NPM registry server (required to serve)"},
 			},
 			Action: func(c *cli.Context) error {
-				conf := getConfig(c.String("config"))
-
-				// global database frontend
-				s := store.NewStore(&conf.DB)
-
-				// webserver
-				if c.Bool("server") {
-					server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
-					if c.Bool("only-server") {
-						server.Run()
-						return nil
-					}
-					go server.Run()
-				}
-
-				client := npm.NewMirrorClient(pb, &conf.Mirror)
+				client := npm.NewMirrorClient(store, &config.Mirror)
 				client.Run(c.Bool("onetime"))
+				return nil
+			},
+		},
+		{
+			Name:    "start",
+			Aliases: []string{"s"},
+			Usage:   "Start PocketNPM server",
+			Action: func(c *cli.Context) error {
+				// // global database frontend
+				// s := store.NewStore(&conf.DB)
+				//
+				// // webserver
+				// if c.Bool("server") {
+				// 	server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
+				// 	if c.Bool("only-server") {
+				// 		server.Run()
+				// 		return nil
+				// 	}
+				// 	go server.Run()
+				// }
+				//
+				// client := npm.NewMirrorClient(pb, &conf.Mirror)
+				// client.Run(c.Bool("onetime"))
 				return nil
 			},
 		},

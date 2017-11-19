@@ -22,7 +22,7 @@ import (
 
 // PocketServer type contains essential shared items to run a npm server
 type PocketServer struct {
-	db           *db.PocketBase
+	db           *db.Store
 	serverConfig *ServerConfig
 	mirrorConfig *MirrorConfig
 	router       *fasthttprouter.Router
@@ -30,7 +30,7 @@ type PocketServer struct {
 }
 
 // NewPocketServer initializes new instance of PocketServer
-func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig *MirrorConfig) *PocketServer {
+func NewPocketServer(db *db.Store, serverConfig *ServerConfig, mirrorConfig *MirrorConfig) *PocketServer {
 	mirrorConfig.Path, _ = filepath.Abs(mirrorConfig.Path)
 	if _, err := os.Stat(mirrorConfig.Path); os.IsNotExist(err) {
 		log.Fatalf("Directory does not exist: %s", mirrorConfig.Path)
@@ -47,8 +47,8 @@ func NewPocketServer(db *db.PocketBase, serverConfig *ServerConfig, mirrorConfig
 		if err == nil {
 			logger.Out = file
 			logger.Formatter = &logrus.TextFormatter{
-				FullTimestamp:  true,
-				DisableColors:  true,
+				FullTimestamp:    true,
+				DisableColors:    true,
 				QuoteEmptyFields: true,
 			}
 		} else {
@@ -204,7 +204,7 @@ func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name str
 func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
 	stat := server.db.GetStats()
 	markedCount := server.db.GetCountOfMarks(true)
-	sequence := server.db.GetSequence()
+	sequence, _ := server.db.GetSequence()
 	output := map[string]interface{}{
 		"docs":      stat.Documents,
 		"available": markedCount,

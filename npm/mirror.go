@@ -1,28 +1,25 @@
 package npm
 
 import (
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
-	pbar "gopkg.in/cheggaaa/pb.v1"
 )
 
 type MirrorClient struct {
-	db        *db.PocketBase
+	store     *db.Store
 	config    *MirrorConfig
 	npmClient *NPMClient
 }
 
 // NewMirrorClient creates an instance of MirrorClient
-func NewMirrorClient(db *db.PocketBase, config *MirrorConfig) *MirrorClient {
+func NewMirrorClient(store *db.Store, config *MirrorConfig) *MirrorClient {
 	// Fix relative path
 	config.Path, _ = filepath.Abs(config.Path)
 	// Check for directory exists or not
@@ -40,7 +37,7 @@ func NewMirrorClient(db *db.PocketBase, config *MirrorConfig) *MirrorClient {
 	npmClient := NewNPMClient(config.Registry, config.Path)
 	client := &MirrorClient{
 		config:    config,
-		db:        db,
+		store:     store,
 		npmClient: npmClient,
 	}
 
@@ -48,18 +45,18 @@ func NewMirrorClient(db *db.PocketBase, config *MirrorConfig) *MirrorClient {
 }
 
 func (c *MirrorClient) initDocument(allDocs *AllDocsResponse) {
-	packages := make([]*db.BarePackage, allDocs.TotalRows)
+	packages := make([]*db.Package, allDocs.TotalRows)
 
 	for i, doc := range allDocs.Rows {
-		packages[i] = &db.BarePackage{
+		packages[i] = &db.Package{
 			ID:       doc.ID,
 			Revision: doc.Value.Revision,
 		}
 	}
 
 	log.Debug("Putting packages..")
-	c.db.PutPackages(packages)
-	c.db.SetSequence(allDocs.Sequence)
+	// c.store.PutPackages(packages)
+	// c.store.SetSequence(allDocs.Sequence)
 	log.Debug("Succeed")
 }
 
@@ -73,7 +70,7 @@ func (c *MirrorClient) FirstRun() {
 
 func (c *MirrorClient) Start() {
 	// Load all packages with its revision
-	packages := c.db.GetIncompletePackages()
+	packages := c.store.GetIncompletePackages()
 
 	log.Debugf("Packages to queue: %d", len(packages))
 
@@ -81,8 +78,8 @@ func (c *MirrorClient) Start() {
 	var workers = make([]*MirrorWorker, c.config.MaxConnections)
 	// Initialize channels
 	// workQueue has a buffer size of 100
-	var workQueue = make(chan *db.BarePackage, 100)
-	var workerQueue = make(chan chan *db.BarePackage, c.config.MaxConnections)
+	var workQueue = make(chan *db.Package, 100)
+	var workerQueue = make(chan chan *db.Package, c.config.MaxConnections)
 	var resultQueue = make(chan *MirrorWorkResult)
 	// WaitGroup
 	var wg sync.WaitGroup
@@ -95,7 +92,7 @@ func (c *MirrorClient) Start() {
 	}
 
 	// Result handler
-	go func(db *db.PocketBase, wg *sync.WaitGroup) {
+	go func(wg *sync.WaitGroup) {
 		for {
 			result, done := <-resultQueue
 			if !done {
@@ -106,7 +103,7 @@ func (c *MirrorClient) Start() {
 			if result.Deleted {
 				path := getLocalPath(c.config.Path, result.Package.ID)
 				os.RemoveAll(path)
-				db.DeletePackage(result.Package.ID)
+				// db.DeletePackage(result.Package.ID)
 				log.WithFields(logrus.Fields{
 					"worker": result.WorkerID,
 				}).Infof("Deleted: %s", result.Package.ID)
@@ -122,7 +119,8 @@ func (c *MirrorClient) Start() {
 				file, _ := url.Parse(dist.Tarball)
 				files = append(files, file)
 			}
-			succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, files)
+			// succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, files)
+			succeed := true
 			wg.Done()
 			if succeed {
 				log.WithFields(logrus.Fields{
@@ -134,7 +132,7 @@ func (c *MirrorClient) Start() {
 				log.Errorf("Failed to mirror: %s", result.Package.ID)
 			}
 		}
-	}(c.db, &wg)
+	}(&wg)
 
 	// Start dispatcher
 	go func() {
@@ -174,7 +172,7 @@ func (c *MirrorClient) Update() {
 	interval := time.Duration(c.config.Interval) * time.Second
 	for {
 		// Load changes
-		since := c.db.GetSequence()
+		since, _ := c.store.GetSequence()
 		changes := c.npmClient.GetChangesSince(since)
 		if since == changes.LastSequence {
 			log.Info("Update: currently up to date. no packages will be updated")
@@ -182,14 +180,14 @@ func (c *MirrorClient) Update() {
 			continue
 		}
 
-		updates := map[string]*db.BarePackage{}
+		updates := map[string]*db.Package{}
 		for _, pkg := range changes.Results {
 			name := pkg.ID
 			rev := pkg.Changes[0].Revision
-			currentRev := c.db.GetRevision(name)
+			currentRev := c.store.GetRevision(name)
 
 			if currentRev == "" || currentRev != rev {
-				updates[name] = &db.BarePackage{
+				updates[name] = &db.Package{
 					ID:       name,
 					Revision: rev,
 				}
@@ -197,7 +195,7 @@ func (c *MirrorClient) Update() {
 		}
 
 		i := 0
-		packages := make([]*db.BarePackage, len(updates))
+		packages := make([]*db.Package, len(updates))
 		for _, pkg := range updates {
 			packages[i] = pkg
 			i++
@@ -206,9 +204,9 @@ func (c *MirrorClient) Update() {
 		log.Infof("Update: %d packages will be updated", len(packages))
 
 		// Put all packages
-		c.db.PutPackages(packages)
+		// c.store.PutPackages(packages)
 		// Update sequence
-		c.db.SetSequence(changes.LastSequence)
+		c.store.SetSequence(changes.LastSequence)
 		log.Debugf("Update: Sequence has been set to %d (was %d)", changes.LastSequence, since)
 
 		// Start worker
@@ -220,14 +218,18 @@ func (c *MirrorClient) Update() {
 }
 
 func (c *MirrorClient) initialize() {
-	if !c.db.IsInitialized() {
+	if !c.store.IsInitialized() {
 		log.Debug("Database has not been initialized. Init..")
-		c.db.Init()
+		err := c.store.Init()
+		if err != nil {
+			log.Fatal("Failed to initialize database")
+		}
 	} else {
 		log.Debug("Database has already been initialized.")
+		return
 	}
 
-	if !c.db.IsInitialized() {
+	if !c.store.IsInitialized() {
 		log.Fatal("Failed to initialize database")
 	}
 }
@@ -236,7 +238,7 @@ func (c *MirrorClient) Run(onetime bool) {
 	c.initialize()
 
 	log.Debug("Loading stats..")
-	stats := c.db.GetStats()
+	stats := c.store.GetStats()
 	log.WithFields(logrus.Fields{
 		"Packages":  stats.Packages,
 		"Marks":     stats.Marks,
@@ -244,7 +246,7 @@ func (c *MirrorClient) Run(onetime bool) {
 		"Files":     stats.Files,
 	}).Debug("Status for database")
 
-	seq := c.db.GetSequence()
+	seq, _ := c.store.GetSequence()
 
 	if seq == 0 {
 		log.WithFields(logrus.Fields{
@@ -255,7 +257,7 @@ func (c *MirrorClient) Run(onetime bool) {
 		c.Start()
 	}
 
-	markedCount := c.db.GetCountOfMarks(true)
+	markedCount := c.store.GetCountOfMarks(true)
 
 	if seq > 0 && markedCount < stats.Packages {
 		log.WithFields(logrus.Fields{
@@ -269,7 +271,7 @@ func (c *MirrorClient) Run(onetime bool) {
 		return
 	}
 
-	seq = c.db.GetSequence()
+	seq, _ = c.store.GetSequence()
 
 	if seq > 0 && markedCount == stats.Packages {
 		log.WithFields(logrus.Fields{
@@ -281,40 +283,4 @@ func (c *MirrorClient) Run(onetime bool) {
 
 	exit := make(chan struct{}, 1)
 	<-exit
-}
-
-func (c *MirrorClient) Check() {
-	c.initialize()
-
-	// Load all files
-	log.Infof("Loading all files")
-	files := c.db.GetAllFiles()
-
-	var errs []string
-
-	count := len(files)
-	log.Infof("Checking files for %d packages", count)
-	bar := pbar.StartNew(count)
-
-	// Check file exists
-	for name, items := range files {
-		bar.Total += int64(len(items))
-		for _, item := range items {
-			path := getLocalPath(c.config.Path, item.Path)
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				errstr := fmt.Sprintf("%s: %s", name, path)
-				errs = append(errs, errstr)
-			}
-
-			bar.Increment()
-		}
-		bar.Increment()
-	}
-	bar.Finish()
-
-	// Write errors
-	log.Debugf("Creating missing report of file checks: report.txt")
-	out, _ := os.Create("report.log")
-	defer out.Close()
-	out.WriteString(strings.Join(errs[:], "\n"))
 }

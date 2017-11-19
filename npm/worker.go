@@ -13,8 +13,8 @@ import (
 // MirrorWorker contains channels used to act as a worker
 type MirrorWorker struct {
 	ID          int
-	Work        chan *db.BarePackage
-	WorkerQueue chan chan *db.BarePackage
+	Work        chan *db.Package
+	WorkerQueue chan chan *db.Package
 	ResultQueue chan *MirrorWorkResult
 	WaitGroup   *sync.WaitGroup
 	QuitChan    chan bool
@@ -24,7 +24,7 @@ type MirrorWorker struct {
 
 // MirrorWorkResult contains the result of worker action
 type MirrorWorkResult struct {
-	Package          *db.BarePackage
+	Package          *db.Package
 	DocumentRevision string
 	Document         string
 	Distributions    []*distribution
@@ -33,10 +33,10 @@ type MirrorWorkResult struct {
 }
 
 // NewMirrorWorker creates a worker with given parameters
-func NewMirrorWorker(id int, npmClient *NPMClient, workerQueue chan chan *db.BarePackage, resultQueue chan *MirrorWorkResult, wg *sync.WaitGroup) *MirrorWorker {
+func NewMirrorWorker(id int, npmClient *NPMClient, workerQueue chan chan *db.Package, resultQueue chan *MirrorWorkResult, wg *sync.WaitGroup) *MirrorWorker {
 	worker := &MirrorWorker{
 		ID:          id,
-		Work:        make(chan *db.BarePackage),
+		Work:        make(chan *db.Package),
 		WorkerQueue: workerQueue,
 		ResultQueue: resultQueue,
 		WaitGroup:   wg,
