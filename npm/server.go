@@ -203,10 +203,10 @@ func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name str
 
 func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
 	stat := server.db.GetStats()
-	markedCount := server.db.GetCountOfMarks(true)
+	markedCount, _ := server.db.CountPackages(true)
 	sequence, _ := server.db.GetSequence()
 	output := map[string]interface{}{
-		"docs":      stat.Documents,
+		"packages":  stat.Packages,
 		"available": markedCount,
 		"sequence":  sequence,
 	}

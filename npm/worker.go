@@ -69,7 +69,7 @@ func (w *MirrorWorker) Start() {
 				log.WithFields(logrus.Fields{
 					"worker": w.ID,
 				}).Infof("Mirroring: %s", work.ID)
-				document := w.npmClient.GetDocument(work.ID)
+				document := w.npmClient.GetDocument(work.IDString())
 				distributions := []*distribution{}
 
 				var doc DocumentResponse
@@ -96,17 +96,17 @@ func (w *MirrorWorker) Start() {
 
 				// download all files here
 				log.WithFields(logrus.Fields{
-					"name":   work.ID,
+					"name":   work.IDString(),
 					"worker": w.ID,
 				}).Debugf("Total files to download: %d", len(distributions))
-				for _, dist := range distributions {
-					file, _ := url.Parse(dist.Tarball)
 
-					if checkValidDist(dist) {
+				for _, dist := range distributions {
+					file, err := url.Parse(dist.Tarball)
+					if err == nil && checkValidDist(dist) {
 						dist.Completed = w.npmClient.Download(file, dist.SHA1)
 						if !dist.Completed {
 							log.WithFields(logrus.Fields{
-								"ID": work.ID,
+								"ID": work.IDString(),
 							}).Warnf("Failed to download: %s", file.Path)
 						}
 					}

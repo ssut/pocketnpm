@@ -1,7 +1,6 @@
 package npm
 
 import (
-	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
+	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
 type MirrorClient struct {
@@ -45,19 +45,39 @@ func NewMirrorClient(store *db.Store, config *MirrorConfig) *MirrorClient {
 }
 
 func (c *MirrorClient) initDocument(allDocs *AllDocsResponse) {
-	packages := make([]*db.Package, allDocs.TotalRows)
+	log.Debug("Using transaction (10000 items per one transaction)")
+	log.WithFields(logrus.Fields{
+		"docs": allDocs.TotalRows,
+		"seq":  allDocs.Sequence,
+	}).Infof("Targets")
 
+	var trans bool
+	var tx *db.StoreTx
+	var checkpoint int
+	bar := pb.StartNew(allDocs.TotalRows)
 	for i, doc := range allDocs.Rows {
-		packages[i] = &db.Package{
-			ID:       doc.ID,
-			Revision: doc.Value.Revision,
+		if !trans {
+			trans = true
+			tx = c.store.AcquireTx()
+		}
+
+		pkg := db.NewPackage(doc.ID, doc.Value.Revision)
+		c.store.AddPackage(tx, pkg, false)
+		bar.Increment()
+
+		if trans && (i+1)%10000 == 0 {
+			tx.Commit()
+			trans = false
+			checkpoint = (i + 1) % 10000
 		}
 	}
 
-	log.Debug("Putting packages..")
-	// c.store.PutPackages(packages)
-	// c.store.SetSequence(allDocs.Sequence)
-	log.Debug("Succeed")
+	if trans {
+		tx.Commit()
+	}
+	bar.Finish()
+	c.store.SetSequence(allDocs.Sequence)
+	log.Infof("Successfully initialized %d documents in %d transactions", allDocs.TotalRows, checkpoint)
 }
 
 func (c *MirrorClient) FirstRun() {
@@ -101,9 +121,9 @@ func (c *MirrorClient) Start() {
 			}
 
 			if result.Deleted {
-				path := getLocalPath(c.config.Path, result.Package.ID)
+				path := getLocalPath(c.config.Path, result.Package.IDString())
 				os.RemoveAll(path)
-				// db.DeletePackage(result.Package.ID)
+				c.store.DeletePackage(result.Package.IDString())
 				log.WithFields(logrus.Fields{
 					"worker": result.WorkerID,
 				}).Infof("Deleted: %s", result.Package.ID)
@@ -111,16 +131,24 @@ func (c *MirrorClient) Start() {
 				continue
 			}
 
-			var files []*url.URL
+			var dists []*db.Dist
 			for _, dist := range result.Distributions {
 				if !dist.Completed {
 					continue
 				}
-				file, _ := url.Parse(dist.Tarball)
-				files = append(files, file)
+				dist := &db.Dist{
+					Hash:       dist.SHA1,
+					URL:        dist.Tarball,
+					Downloaded: dist.Completed,
+				}
+				dists = append(dists, dist)
 			}
-			// succeed := db.PutCompleted(result.Package, result.Document, result.DocumentRevision, files)
-			succeed := true
+
+			var succeed bool
+			if len(result.Document) > 0 {
+				succeed = c.store.AddCompletedPackage(nil, result.Package, result.Document, result.DocumentRevision, dists)
+			}
+
 			wg.Done()
 			if succeed {
 				log.WithFields(logrus.Fields{
@@ -187,10 +215,7 @@ func (c *MirrorClient) Update() {
 			currentRev := c.store.GetRevision(name)
 
 			if currentRev == "" || currentRev != rev {
-				updates[name] = &db.Package{
-					ID:       name,
-					Revision: rev,
-				}
+				updates[name] = db.NewPackage(name, rev)
 			}
 		}
 
@@ -241,13 +266,11 @@ func (c *MirrorClient) Run(onetime bool) {
 	stats := c.store.GetStats()
 	log.WithFields(logrus.Fields{
 		"Packages":  stats.Packages,
-		"Marks":     stats.Marks,
-		"Documents": stats.Documents,
+		"Completed": stats.Completed,
 		"Files":     stats.Files,
-	}).Debug("Status for database")
+	}).Info("Status for database")
 
 	seq, _ := c.store.GetSequence()
-
 	if seq == 0 {
 		log.WithFields(logrus.Fields{
 			"sequence": seq,
@@ -257,7 +280,7 @@ func (c *MirrorClient) Run(onetime bool) {
 		c.Start()
 	}
 
-	markedCount := c.store.GetCountOfMarks(true)
+	markedCount, _ := c.store.CountPackages(true)
 
 	if seq > 0 && markedCount < stats.Packages {
 		log.WithFields(logrus.Fields{

@@ -1,11 +1,8 @@
 package db
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"fmt"
-	"net/url"
 	"strconv"
 
 	"github.com/jinzhu/gorm"
@@ -31,11 +28,11 @@ type GlobalStore struct {
 
 // PackageStore contains packages
 type PackageStore struct {
-	ID       []byte `gorm:"primary_key"`
-	Revision string
-	Document string             `gorm:"size:-1"`
-	Marked   bool               `gorm:"index"`
-	Dists    []PackageDistStore `gorm:"ForeignKey:PackageID"`
+	ID        []byte `gorm:"primary_key"`
+	Revision  string
+	Document  string             `gorm:"size:-1"`
+	Completed bool               `gorm:"index"`
+	Dists     []PackageDistStore `gorm:"ForeignKey:PackageID"`
 }
 
 // IDString returns a string value of ID
@@ -56,12 +53,12 @@ func (m *PackageDistStore) IDString() string {
 	return string(m.PackageID)
 }
 
-type gormTx struct {
+type StoreTx struct {
 	Tx        *gorm.DB
 	committed bool
 }
 
-func (base *gormTx) Commit() error {
+func (base *StoreTx) Commit() error {
 	err := base.Tx.Commit().Error
 	if err == nil {
 		base.committed = true
@@ -69,7 +66,7 @@ func (base *gormTx) Commit() error {
 	return err
 }
 
-func (base *gormTx) Rollback() error {
+func (base *StoreTx) Rollback() error {
 	if base.committed {
 		return nil
 	}
@@ -132,62 +129,78 @@ func (store *Store) IsInitialized() bool {
 }
 
 func (store *Store) GetStats() (stats *DatabaseStats) {
-	stats = &DatabaseStats{}
+	completed, _ := store.CountPackages(true)
+	packages, _ := store.GetItemCount(&PackageStore{})
+	files, _ := store.GetItemCount(&PackageDistStore{})
+
+	stats = &DatabaseStats{
+		Packages:  packages,
+		Completed: completed,
+		Files:     files,
+	}
 
 	return
 }
 
-func (store *Store) GetItemCount(name string) (count int, err error) {
-	res := store.db.Model(&PackageStore{}).Count(&count)
+func (store *Store) GetItemCount(model interface{}) (count int64, err error) {
+	res := store.db.Model(model).Count(&count)
 	err = res.Error
 	return
 }
 
-func (store *Store) GetSequence() (sequence int, err error) {
+func (store *Store) Get(key string) (string, error) {
 	var item GlobalStore
-	res := store.db.Where(&GlobalStore{Key: "sequence"}).First(&item)
+	res := store.db.Where(&GlobalStore{Key: key}).First(&item)
 	if res.Error != nil {
-		return 0, res.Error
+		return "", res.Error
 	}
 
-	sequence, err = strconv.Atoi(item.Value)
+	return item.Value, nil
+}
+
+func (store *Store) Set(key, value string) (err error) {
+	var item GlobalStore
+	res := store.db.Where(GlobalStore{Key: "sequence"}).Assign(GlobalStore{Value: value}).FirstOrCreate(&item)
+	return res.Error
+}
+
+func (store *Store) GetSequence() (sequence int, err error) {
+	seqStr, err := store.Get("sequence")
+	if err != nil {
+		return 0, err
+	}
+
+	sequence, err = strconv.Atoi(seqStr)
 	return
 }
 
 func (store *Store) SetSequence(seq int) (err error) {
-	var item GlobalStore
-	store.db.Where(&GlobalStore{Key: "sequence"}).First(&item)
-	item.Value = strconv.Itoa(seq)
-	store.db.Save(&item)
-	return
+	return store.Set("sequence", strconv.Itoa(seq))
 }
 
-func (store *Store) GetCountOfMarks(cond bool) (count int) {
+func (store *Store) CountPackages(cond bool) (count int64, err error) {
 	flag := false
 	if cond == true {
 		flag = true
 	}
 
-	store.db.Model(&PackageStore{}).Where("marked = ?", flag).Count(&count)
+	res := store.db.Model(&PackageStore{}).Where("completed = ?", flag).Count(&count)
+	err = res.Error
 	return
 }
 
 func (store *Store) GetIncompletePackages() (packages []*Package) {
-	rows, err := store.db.Model(&PackageStore{}).Select("id, revision, marked").Where("marked = ?", false).Rows()
+	rows, err := store.db.Model(&PackageStore{}).Select("id, revision, completed").Where("completed = ?", false).Rows()
 	if err != nil {
 		log.Fatalf("Failed to get all incomplete packages: %v", err)
 		return
 	}
 
+	var item PackageStore
 	for rows.Next() {
-		var item PackageStore
 		store.db.ScanRows(rows, &item)
-		pack := &Package{
-			ID:       item.IDString(),
-			Revision: item.Revision,
-		}
-
-		packages = append(packages, pack)
+		pkg := NewPackage(item.IDString(), item.Revision)
+		packages = append(packages, pkg)
 	}
 
 	return
@@ -220,7 +233,7 @@ func (store *Store) GetDocument(id string, withfiles bool) (document string, fil
 	if withfiles {
 	}
 
-	if document == "" && !item.Marked {
+	if document == "" && !item.Completed {
 		err = errors.New("Package has not been downloaded yet")
 		return
 	}
@@ -232,40 +245,54 @@ func (store *Store) GetAllFiles() (all []*PackageDistStore) {
 	return
 }
 
-func (store *Store) AcquireTx() transactionable {
-	tx := &gormTx{Tx: store.db.Begin()}
+func (store *Store) AcquireTx() *StoreTx {
+	tx := &StoreTx{Tx: store.db.Begin()}
 	return tx
 }
 
-func (store *Store) PutPackage(tr transactionable, id string, rev string, mark bool, overwrite bool) error {
-	tx := tr.(*gormTx).Tx
+func (store *Store) AddPackage(tr *StoreTx, pkg *Package, completed bool) error {
+	var selfAcquired bool
+	if tr == nil {
+		tr = store.AcquireTx()
+		selfAcquired = true
+	}
+	tx := tr.Tx
 
 	var existingPack PackageStore
-	if tx.Where("id = ?", id).First(&existingPack).RecordNotFound() {
+	if tx.Where("id = ?", pkg.ID).First(&existingPack).RecordNotFound() {
 		pack := PackageStore{
-			ID:       []byte(id),
-			Revision: rev,
-			Marked:   mark,
+			ID:        pkg.ID,
+			Revision:  pkg.Revision,
+			Completed: completed,
 		}
 		err := tx.Create(&pack).Error
 		if err != nil {
-			return fmt.Errorf("Failed to create: %s %v", id, err)
+			return fmt.Errorf("Failed to create: %s %v", pkg.IDString(), err)
 		}
 	} else {
-		existingPack.Revision = rev
-		existingPack.Marked = mark
+		existingPack.Revision = pkg.Revision
+		existingPack.Completed = completed
 		tx.Save(&existingPack)
+	}
+
+	if selfAcquired {
+		return tr.Commit()
 	}
 
 	return nil
 }
 
-func (store *Store) DeletePackage(id string) {
-	store.db.Delete(&PackageStore{ID: []byte(id)})
+func (store *Store) DeletePackage(id string) error {
+	return store.db.Delete(&PackageStore{ID: []byte(id)}).Error
 }
 
-func (store *Store) PutCompleted(tr transactionable, pack *Package, document string, rev string, downloads []*url.URL) bool {
-	tx := tr.(*gormTx).Tx
+func (store *Store) AddCompletedPackage(tr *StoreTx, pack *Package, document string, rev string, dists []*Dist) bool {
+	var selfAcquired bool
+	if tr == nil {
+		tr = store.AcquireTx()
+		selfAcquired = true
+	}
+	tx := tr.Tx
 
 	// get existing package
 	var item PackageStore
@@ -276,20 +303,33 @@ func (store *Store) PutCompleted(tr transactionable, pack *Package, document str
 
 	item.Revision = rev
 	item.Document = document
-	item.Marked = true
+	item.Completed = true
 
-	// encode files
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err = enc.Encode(downloads)
-	if err != nil {
-		return false
+	var distItem PackageDistStore
+	cond := PackageDistStore{
+		PackageID: pack.ID,
 	}
-	// files := base64.StdEncoding.EncodeToString(buf.Bytes())
+	for _, dist := range dists {
+		cond.Hash = dist.Hash
+		cond.Path = dist.URL
+		err := tx.Where(cond).Assign(PackageDistStore{
+			PackageID:  pack.ID,
+			Hash:       dist.Hash,
+			Path:       dist.URL,
+			Downloaded: dist.Downloaded,
+		}).FirstOrCreate(&distItem).Error
+		if err != nil {
+			return false
+		}
+	}
 
 	err = tx.Save(&item).Error
 	if err != nil {
 		return false
+	}
+
+	if selfAcquired {
+		return tr.Commit() == nil
 	}
 
 	return true
