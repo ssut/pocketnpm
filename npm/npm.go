@@ -21,20 +21,23 @@ import (
 )
 
 type NPMClient struct {
-	httpClient *fasthttp.Client
-	registry   string
-	path       string
+	legacyClient *http.Client
+	httpClient   *fasthttp.Client
+	registry     string
+	path         string
 }
 
 func NewNPMClient(registry string, path string) *NPMClient {
+	legacyClient := &http.Client{}
 	httpClient := &fasthttp.Client{
 		Name: "PocketNPM Client",
 	}
 
 	client := &NPMClient{
-		httpClient: httpClient,
-		registry:   registry,
-		path:       path,
+		legacyClient: legacyClient,
+		httpClient:   httpClient,
+		registry:     registry,
+		path:         path,
 	}
 
 	return client
@@ -93,20 +96,21 @@ func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 	q.Add("update_seq", "true")
 	u.RawQuery = q.Encode()
 
-	log.Debugf("Get: %s", u.String())
-	statusCode, body, err := c.httpClient.Get(nil, u.String())
+	log.Debugf("GET: %s", u.String())
+	res, err := c.legacyClient.Get(u.String())
 	if err != nil {
 		log.Fatal(err)
 		return nil
 	}
-	if statusCode != fasthttp.StatusOK {
-		log.Fatalf("Unexpected status code: %d", statusCode)
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		log.Fatalf("Unexpected status code: %d", res.StatusCode)
 		return nil
 	}
 
-	log.Debugf("Unmarshaling the entire document (%d B)", len(body))
 	var resp AllDocsResponse
-	if err := ffjson.Unmarshal(body, &resp); err != nil {
+	if err := ffjson.NewDecoder().DecodeReader(res.Body, &resp); err != nil {
 		log.Print(err)
 		log.Fatalf("Could not decode JSON data: %s", err)
 		return nil
