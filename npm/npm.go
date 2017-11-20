@@ -43,45 +43,22 @@ func NewNPMClient(registry string, path string) *NPMClient {
 	return client
 }
 
-func (c *NPMClient) attemptGet(url string, maxAttempts int, returnStream bool) (resp *http.Response, body interface{}, err error) {
+func (c *NPMClient) attemptGet(url string, maxAttempts int) (resp *http.Response, err error) {
 	attempts := 0
 
 	for {
 		attempts++
 
-		if returnStream || strings.Contains(url, "%") {
-			resp, err = http.Get(url)
-			if err != nil {
-				log.Error(err)
-				return resp, nil, err
-			}
-
-			body = resp.Body
-		} else {
-			var statusCode int
-			statusCode, body, err = c.httpClient.Get(nil, url)
-			resp = &http.Response{
-				StatusCode:    statusCode,
-				ContentLength: int64(len(body.([]byte))),
-			}
-		}
-
+		resp, err = c.legacyClient.Get(url)
 		if err != nil && attempts < maxAttempts {
 			log.WithFields(logrus.Fields{
 				"attempts": attempts,
-			}).Warnf("http error: %s", err)
+			}).Warnf("http error: %v", err)
 			continue
 		}
 
 		if err == nil || attempts >= maxAttempts {
 			break
-		}
-	}
-
-	if !returnStream {
-		if _, ok := body.(io.ReadCloser); ok {
-			defer resp.Body.Close()
-			body, _ = ioutil.ReadAll(resp.Body)
 		}
 	}
 
@@ -135,20 +112,26 @@ func (c *NPMClient) GetDocument(id string) string {
 		docURL = u.String()
 	}
 
-	resp, body, err := c.attemptGet(docURL, 3, false)
-
+	resp, err := c.attemptGet(docURL, 3)
 	log.Debugf("Get: %s", docURL)
 
 	if err != nil {
 		log.Error(err)
 		return ""
 	}
-	if resp.StatusCode != fasthttp.StatusOK {
+
+	if resp.StatusCode != http.StatusOK {
 		log.Errorf("Unexpected status code: %d (%s)", resp.StatusCode, docURL)
 		return strconv.FormatInt(int64(resp.StatusCode), 10)
 	}
 
-	return string(body.([]byte))
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+
+	return string(body)
 }
 
 func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
@@ -205,16 +188,19 @@ func (c *NPMClient) Download(url *url.URL, shasum string) bool {
 		}
 	}
 
-	resp, body, err := c.attemptGet(url.String(), 3, true)
-	if _, ok := body.(io.ReadCloser); !ok {
+	resp, err := c.attemptGet(url.String(), 3)
+	if err != nil {
 		return false
 	}
-	defer body.(io.ReadCloser).Close()
 
-	if resp.StatusCode == fasthttp.StatusOK {
-		size := resp.ContentLength
-		n, _ := io.Copy(out, body.(io.ReadCloser))
-		return size == n
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		n, err := io.Copy(out, resp.Body)
+		if err != nil {
+			return false
+		}
+		return resp.ContentLength == n
 	}
 
 	return false
