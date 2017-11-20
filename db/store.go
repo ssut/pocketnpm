@@ -42,7 +42,8 @@ func (m *PackageStore) IDString() string {
 
 // PackageDistStore contains package dists
 type PackageDistStore struct {
-	PackageID  []byte
+	Package    *PackageStore
+	PackageID  []byte `gorm:"index"`
 	Hash       string
 	Path       string
 	Downloaded bool `gorm:"index"`
@@ -101,6 +102,8 @@ func (store *Store) Init() error {
 	if err != nil {
 		return fmt.Errorf("Failed to execute auto migration: %v", err)
 	}
+	packageTableName := store.db.NewScope(&PackageStore{}).GetModelStruct().TableName(store.db)
+	store.db.Model(&PackageDistStore{}).AddForeignKey("package_id", packageTableName+"(id)", "CASCADE", "CASCADE")
 
 	if _, err := store.GetSequence(); err != nil {
 		sequence := GlobalStore{Key: "sequence", Value: "0"}
@@ -190,7 +193,7 @@ func (store *Store) CountPackages(cond bool) (count int64, err error) {
 }
 
 func (store *Store) GetIncompletePackages() (packages []*Package) {
-	rows, err := store.db.Model(&PackageStore{}).Select("id, revision, completed").Where("completed = ?", false).Rows()
+	rows, err := store.db.Model(&PackageStore{}).Select("id, revision, completed").Where("completed = ?", false).Order("id").Rows()
 	if err != nil {
 		log.Fatalf("Failed to get all incomplete packages: %v", err)
 		return
