@@ -244,18 +244,18 @@ func (c *MirrorClient) Update() {
 
 func (c *MirrorClient) initialize() {
 	if !c.store.IsInitialized() {
-		log.Debug("Database has not been initialized. Init..")
+		log.Debug("Need to upgrade database")
 		err := c.store.Init()
 		if err != nil {
-			log.Fatal("Failed to initialize database")
+			log.Fatal("Failed to upgrade database")
 		}
 	} else {
-		log.Debug("Database has already been initialized.")
+		log.Debug("Database is up to date")
 		return
 	}
 
 	if !c.store.IsInitialized() {
-		log.Fatal("Failed to initialize database")
+		log.Fatal("Failed to upgrade database")
 	}
 }
 

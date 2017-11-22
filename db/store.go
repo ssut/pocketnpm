@@ -16,8 +16,9 @@ import (
 
 // Store represents a database
 type Store struct {
-	db     *gorm.DB
-	config *DatabaseConfig
+	db       *gorm.DB
+	migrator *Migrator
+	config   *DatabaseConfig
 }
 
 // GlobalStore contains important things
@@ -77,7 +78,8 @@ func (base *StoreTx) Rollback() error {
 
 func NewStore(config *DatabaseConfig) *Store {
 	store := &Store{
-		config: config,
+		config:   config,
+		migrator: &Migrator{},
 	}
 
 	return store
@@ -89,6 +91,9 @@ func (store *Store) Connect() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %v", err)
 	}
+	if store.migrator != nil {
+		store.migrator.db = store.db
+	}
 
 	return nil
 }
@@ -98,12 +103,10 @@ func (store *Store) Close() error {
 }
 
 func (store *Store) Init() error {
-	err := store.db.AutoMigrate(&GlobalStore{}, &PackageStore{}, &PackageDistStore{}).Error
+	err := store.migrator.Run()
 	if err != nil {
-		return fmt.Errorf("Failed to execute auto migration: %v", err)
+		return err
 	}
-	packageTableName := store.db.NewScope(&PackageStore{}).GetModelStruct().TableName(store.db)
-	store.db.Model(&PackageDistStore{}).AddForeignKey("package_id", packageTableName+"(id)", "CASCADE", "CASCADE")
 
 	if _, err := store.GetSequence(); err != nil {
 		sequence := GlobalStore{Key: "sequence", Value: "0"}
@@ -117,14 +120,16 @@ func (store *Store) Init() error {
 }
 
 func (store *Store) IsInitialized() bool {
-	tables := []interface{}{&GlobalStore{}, &PackageStore{}, &PackageDistStore{}}
-	for _, table := range tables {
-		if !store.db.HasTable(table) {
-			return false
-		}
+	if store.migrator.Version() == 0 {
+		return false
 	}
 
 	if _, err := store.GetSequence(); err != nil {
+		return false
+	}
+
+	version := store.migrator.Version()
+	if store.migrator.NeedsUpgrade(version) {
 		return false
 	}
 
