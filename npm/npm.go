@@ -66,7 +66,7 @@ func (c *NPMClient) attemptGet(url string, maxAttempts int) (resp *http.Response
 }
 
 // GetAllDocs returns a list of npm packages
-func (c *NPMClient) GetAllDocs() *AllDocsResponse {
+func (c *NPMClient) GetAllDocs() (*AllDocsResponse, error) {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, "_all_docs")
 	q := make(url.Values)
@@ -76,24 +76,20 @@ func (c *NPMClient) GetAllDocs() *AllDocsResponse {
 	log.Debugf("GET: %s", u.String())
 	res, err := c.legacyClient.Get(u.String())
 	if err != nil {
-		log.Fatal(err)
-		return nil
+		return nil, err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		log.Fatalf("Unexpected status code: %d", res.StatusCode)
-		return nil
+		return nil, fmt.Errorf("Unexpected status code: %d", res.StatusCode)
 	}
 
 	var resp AllDocsResponse
 	if err := ffjson.NewDecoder().DecodeReader(res.Body, &resp); err != nil {
-		log.Print(err)
-		log.Fatalf("Could not decode JSON data: %s", err)
-		return nil
+		return nil, err
 	}
 
-	return &resp
+	return &resp, nil
 }
 
 func (c *NPMClient) GetDocument(id string) string {
@@ -134,7 +130,7 @@ func (c *NPMClient) GetDocument(id string) string {
 	return string(body)
 }
 
-func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
+func (c *NPMClient) GetChangesSince(seq int) (*ChangesResponse, error) {
 	u, _ := url.Parse(c.registry)
 	u.Path = path.Join(u.Path, "_changes")
 	q := make(url.Values)
@@ -142,23 +138,22 @@ func (c *NPMClient) GetChangesSince(seq int) *ChangesResponse {
 	u.RawQuery = q.Encode()
 
 	log.Debugf("Get: %s", u.String())
-	statusCode, body, err := c.httpClient.Get(nil, u.String())
+	res, err := c.legacyClient.Get(u.String())
 	if err != nil {
-		log.Error(err)
-		return nil
+		return nil, err
 	}
-	if statusCode != fasthttp.StatusOK {
-		log.Errorf("Unexpected status code: %d", statusCode)
-		return nil
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Unexpected status code: %d", res.StatusCode)
 	}
 
 	var resp ChangesResponse
-	if err := ffjson.Unmarshal(body, &resp); err != nil {
-		log.Errorf("Could not decode JSON data: %s", err)
-		return nil
+	if err := ffjson.NewDecoder().DecodeReader(res.Body, &resp); err != nil {
+		return nil, err
 	}
 
-	return &resp
+	return &resp, nil
 }
 
 func (c *NPMClient) Download(url *url.URL, shasum string) bool {

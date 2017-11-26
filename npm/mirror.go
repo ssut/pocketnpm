@@ -68,7 +68,7 @@ func (c *MirrorClient) initDocument(allDocs *AllDocsResponse) {
 		if trans && (i+1)%10000 == 0 {
 			tx.Commit()
 			trans = false
-			checkpoint = (i + 1) % 10000
+			checkpoint++
 		}
 	}
 
@@ -81,7 +81,11 @@ func (c *MirrorClient) initDocument(allDocs *AllDocsResponse) {
 }
 
 func (c *MirrorClient) FirstRun() {
-	allDocs := c.npmClient.GetAllDocs()
+	allDocs, err := c.npmClient.GetAllDocs()
+	if err != nil {
+		log.Errorf("Failed to fetch all docs %v", err)
+		return
+	}
 	log.Infof("Total documents found: %d", allDocs.TotalRows)
 
 	log.Debug("Store all documents by given properties")
@@ -201,43 +205,57 @@ func (c *MirrorClient) Update() {
 	for {
 		// Load changes
 		since, _ := c.store.GetSequence()
-		changes := c.npmClient.GetChangesSince(since)
+		changes, err := c.npmClient.GetChangesSince(since)
+		if err != nil {
+			log.Errorf("Update: failed to fetch changes %v", err)
+			continue
+		}
+
 		if since == changes.LastSequence {
 			log.Info("Update: currently up to date. no packages will be updated")
 			time.Sleep(interval)
 			continue
 		}
 
-		updates := map[string]*db.Package{}
-		for _, pkg := range changes.Results {
-			name := pkg.ID
-			rev := pkg.Changes[0].Revision
-			currentRev := c.store.GetRevision(name)
+		var trans bool
+		var tx *db.StoreTx
+		var checkpoint int
+		total := len(changes.Results)
+		bar := pb.StartNew(total)
+		for i, doc := range changes.Results {
+			if !trans {
+				trans = true
+				tx = c.store.AcquireTx()
+			}
 
-			if currentRev == "" || currentRev != rev {
-				updates[name] = db.NewPackage(name, rev)
+			id := doc.ID
+			revision := doc.Changes[0].Revision
+			currentRev := c.store.GetRevision(id)
+
+			if currentRev == "" || currentRev != revision {
+				pkg := db.NewPackage(id, revision)
+				c.store.AddPackage(tx, pkg, false)
+			}
+			bar.Increment()
+
+			if trans && (i+1)%10000 == 0 {
+				tx.Commit()
+				trans = false
+				checkpoint++
 			}
 		}
 
-		i := 0
-		packages := make([]*db.Package, len(updates))
-		for _, pkg := range updates {
-			packages[i] = pkg
-			i++
+		if trans {
+			tx.Commit()
 		}
-
-		log.Infof("Update: %d packages will be updated", len(packages))
-
-		// Put all packages
-		// c.store.PutPackages(packages)
-		// Update sequence
+		bar.Finish()
 		c.store.SetSequence(changes.LastSequence)
 		log.Debugf("Update: Sequence has been set to %d (was %d)", changes.LastSequence, since)
+		log.Infof("Update: %d packages need to be updated", total)
 
-		// Start worker
 		c.Start()
 		log.Info("Update: finish")
-
+		log.Infof("Update: waiting for next tick (%d sec)", c.config.Interval)
 		time.Sleep(interval)
 	}
 }
