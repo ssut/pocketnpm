@@ -12,7 +12,8 @@ type ServerConfig struct {
 	Scheme       string `toml:"scheme"`
 	Host         string `toml:"host"`
 	Port         int    `toml:"port"`
-	EnableXAccel bool   `toml:"x_accel_redirect"`
+	Redirect     bool   `toml:"redirect"`
+	RedirectPath string `toml:"redirectPath"`
 	LogPath      string `toml:"logpath"`
 }
 

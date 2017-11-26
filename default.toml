@@ -2,7 +2,7 @@
 # check list of available engines:
 #  https://lunny.gitbooks.io/xorm-manual-en-us/content/chapter-01/index.html
 driver = "postgres"
-source = "postgres://?db_name=pocketnpm&user=postgres"
+source = "host=localhost port=5432 user=npm password=npm dbname=npm"
 
 [mirror]
 registry = "https://replicate.npmjs.com/registry"
@@ -10,7 +10,7 @@ concurrency = 20
 # storage path (directory)
 path = "./registry/"
 # interval for checking updates
-interval = 120
+interval = 60
 
 [server]
 bind = "0.0.0.0"
@@ -20,5 +20,8 @@ scheme = "http"
 host = "localhost"
 # send X-Accel-Redirect header to clients such as nginx and apache.
 # see: https://www.nginx.com/resources/wiki/start/topics/examples/x-accel/
-x_accel_redirect = false
+redirect = true
+# to set prefix of the X-Accel-Redirect
+# important: do not use name that could possibly exist, and make sure your path matches.
+redirectPath = "/~registry"
 logpath = "pocketnpm.access.log"

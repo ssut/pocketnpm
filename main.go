@@ -131,22 +131,9 @@ func main() {
 			Aliases: []string{"s"},
 			Usage:   "Start PocketNPM server",
 			Action: func(c *cli.Context) error {
-				// // global database frontend
-				// s := store.NewStore(&conf.DB)
-				//
-				// // webserver
-				// if c.Bool("server") {
-				// 	server := npm.NewPocketServer(pb, &conf.Server, &conf.Mirror)
-				// 	if c.Bool("only-server") {
-				// 		server.Run()
-				// 		return nil
-				// 	}
-				// 	go server.Run()
-				// }
-				//
-				// client := npm.NewMirrorClient(pb, &conf.Mirror)
-				// client.Run(c.Bool("onetime"))
-				return nil
+				server := npm.NewPocketServer(store, &config.Server, &config.Mirror)
+				err := server.Run()
+				return err
 			},
 		},
 	}

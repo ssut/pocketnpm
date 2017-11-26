@@ -22,7 +22,7 @@ import (
 
 // PocketServer type contains essential shared items to run a npm server
 type PocketServer struct {
-	db           *db.Store
+	store        *db.Store
 	serverConfig *ServerConfig
 	mirrorConfig *MirrorConfig
 	router       *fasthttprouter.Router
@@ -30,7 +30,7 @@ type PocketServer struct {
 }
 
 // NewPocketServer initializes new instance of PocketServer
-func NewPocketServer(db *db.Store, serverConfig *ServerConfig, mirrorConfig *MirrorConfig) *PocketServer {
+func NewPocketServer(store *db.Store, serverConfig *ServerConfig, mirrorConfig *MirrorConfig) *PocketServer {
 	mirrorConfig.Path, _ = filepath.Abs(mirrorConfig.Path)
 	if _, err := os.Stat(mirrorConfig.Path); os.IsNotExist(err) {
 		log.Fatalf("Directory does not exist: %s", mirrorConfig.Path)
@@ -59,7 +59,7 @@ func NewPocketServer(db *db.Store, serverConfig *ServerConfig, mirrorConfig *Mir
 	}
 
 	server := &PocketServer{
-		db:           db,
+		store:        store,
 		serverConfig: serverConfig,
 		mirrorConfig: mirrorConfig,
 		router:       fasthttprouter.New(),
@@ -71,10 +71,11 @@ func NewPocketServer(db *db.Store, serverConfig *ServerConfig, mirrorConfig *Mir
 }
 
 // Run runs server
-func (server *PocketServer) Run() {
+func (server *PocketServer) Run() error {
 	addr := fmt.Sprintf("%s:%d", server.serverConfig.Bind, server.serverConfig.Port)
 	log.Infof("Listening on %s", addr)
-	log.Fatal(fasthttp.ListenAndServe(addr, server.router.Handler))
+	err := fasthttp.ListenAndServe(addr, server.router.Handler)
+	return err
 }
 
 func (server *PocketServer) addRoutes() {
@@ -143,8 +144,8 @@ func (server *PocketServer) sendFile(ctx *fasthttp.RequestCtx, path string, name
 	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	ctx.Response.Header.Set("Content-Length", size)
 
-	if server.serverConfig.EnableXAccel {
-		internalPath := strings.Replace(path, server.mirrorConfig.Path, "/_internal", 1)
+	if server.serverConfig.Redirect {
+		internalPath := strings.Replace(path, server.mirrorConfig.Path, server.serverConfig.RedirectPath, 1)
 		ctx.Response.Header.Set("X-Accel-Redirect", internalPath)
 		return
 	}
@@ -175,7 +176,7 @@ func (server *PocketServer) replaceAttachments(document string) string {
 }
 
 func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name string) string {
-	rev := server.db.GetRevision(name)
+	rev := server.store.GetRevision(name)
 	etag := fmt.Sprintf(`"%s"`, rev)
 	ctx.Response.Header.Set("ETag", etag)
 
@@ -188,7 +189,7 @@ func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name str
 		ctx.Response.Header.Set("Cache-Control", "must-revalidate")
 	}
 
-	doc, _, err := server.db.GetDocument(name, false)
+	doc, _, err := server.store.GetDocument(name, false)
 	if err != nil {
 		ctx.SetStatusCode(404)
 		server.writeJSON(ctx, map[string]string{
@@ -202,9 +203,9 @@ func (server *PocketServer) getDocumentByName(ctx *fasthttp.RequestCtx, name str
 }
 
 func (server *PocketServer) getIndex(ctx *fasthttp.RequestCtx) {
-	stat := server.db.GetStats()
-	markedCount, _ := server.db.CountPackages(true)
-	sequence, _ := server.db.GetSequence()
+	stat := server.store.GetStats()
+	markedCount, _ := server.store.CountPackages(true)
+	sequence, _ := server.store.GetSequence()
 	output := map[string]interface{}{
 		"packages":  stat.Packages,
 		"available": markedCount,
