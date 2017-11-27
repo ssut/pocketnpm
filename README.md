@@ -2,24 +2,22 @@
 
 PocketNPM is a simple but powerful utility for mirroring the full of npm packages from another npm registry, without heaving to install some *possibly* heavy dependencies such as CouchDB and Nginx.
 
-You can use the test server at `npm.airfly.io`.
+You can use the test server at `npm.airfly.io` by doing `npm config set registry https://npm.airfly.io/`.
 
 ## Usage
 
 ```bash
 $ go get -u github.com/ssut/pocketnpm
 $ pocketnpm init # to create a default config file under the current directory
-$ pocketnpm start # mirroring
-$ pocketnpm start -onetime # disable continuous mirroring
-$ pocketnpm start -s # start server
-$ pocketnpm -d start # debug mode
-$ pocketnpm start -s -only-server # start only server
+$ pocketnpm --verbose mirror # start mirroring
+$ pocketnpm --verbose mirror --onetime # onetime mirroring
+$ pocketnpm server # start server
 ```
 
 Note that your first time mirroring may take up to a day or more, and it may fail with an error saying that:
 
-- DNS failure: add domain to hosts file (example: `151.101.0.162 registry.npmjs.org`)
-- Not enough disk space: free at least 1TB of disk space
+- DNS failure: add domain to hosts file (example: `IP.ADDR.TO.REGISTRY registry.npmjs.org`)
+- Not enough disk space: free at least 2TB of disk space
 
 Once a mirror has been setup up, PocketNPM will automatically sync your mirror once every interval.
 
@@ -31,8 +29,8 @@ It's very hard nowadays to mirror the npm repo because [npm separated attachment
 
 ### Use Cases and Goals
 
-- local npm mirror for offline dev
-- decentralized; distributed; anyone should be able to run a *continuous* npm mirror 
+- local npm mirror for offline dev (or air-gapped network)
+- distributed; anyone should be able to run a *continuous* npm mirror 
 - for services like `npmjs.cf` that provides only documents, not attachments, PocketNPM can serve attachments as well.
 
 ## How
@@ -51,14 +49,14 @@ Invention:
 
 - Database
 
-  I chose boltdb, an embedded key/value database for Go, instead of requiring third-party database servers.
+  I have used GORM for the database store, so you can use any of the supported DBMS by it.
+  I highliy recommend to configure PostgreSQL database rather than MySQL.
 
-  **Buckets (collections)**
-  - Globals: contains global variables such as "sequence" (couchdb)
-  - Packages: contains key value pair of package to check consistency. (key: name, value: revision)
-  - Marks: contains the state to determine whether package currently downloaded or not.
-  - Documents: contains full document of the package
-  - Files: list of files in url object
+  **Tables**
+  - GlobalStore: contains global variables such as "sequence" and "dbversion"
+  - PackageStore: package data such as "revision" and "document"
+  - PackageStore->completed: contains the state to determine whether package currently finished or not.
+  - PackageDistStore: list of files
 
 - Repository Access
 
@@ -94,10 +92,6 @@ Packages will be stored in the parent directory by the first character of its na
 You need to run pocketnpm on a case-sensitive filesystem.
 
 macOS natively does this OK even though the filesystem is not strictly case-sensitive and pocketnpm will work fine when running on macOS. However, tarring a pocketnpm data directory and moving it to, e.g. Linux with a case-sensitive filesystem will lead to inconsistencies.
-
-### SSDs are highly recommended for the boltdb backend
-
-SSDs are highly recommended for the boltdb backend, just like any other database. Using SSDs for data storage is good as well but the performance depends heavily on the database storage.
 
 ### You can't clone the mirror itself
 

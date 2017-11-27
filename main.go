@@ -127,7 +127,7 @@ func main() {
 			},
 		},
 		{
-			Name:    "start",
+			Name:    "server",
 			Aliases: []string{"s"},
 			Usage:   "Start PocketNPM server",
 			Action: func(c *cli.Context) error {
