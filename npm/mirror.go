@@ -285,7 +285,6 @@ func (c *MirrorClient) Run(onetime bool) {
 	log.WithFields(logrus.Fields{
 		"Packages":  stats.Packages,
 		"Completed": stats.Completed,
-		"Files":     stats.Files,
 	}).Info("Status for database")
 
 	seq, _ := c.store.GetSequence()

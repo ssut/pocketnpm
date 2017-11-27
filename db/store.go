@@ -31,9 +31,9 @@ type GlobalStore struct {
 type PackageStore struct {
 	ID        []byte `gorm:"primary_key"`
 	Revision  string
-	Document  string             `gorm:"size:-1"`
-	Completed bool               `gorm:"index"`
-	Dists     []PackageDistStore `gorm:"ForeignKey:PackageID"`
+	Document  string              `gorm:"size:-1"`
+	Completed bool                `gorm:"index"`
+	Dists     []*PackageDistStore `gorm:"ForeignKey:PackageID"`
 }
 
 // IDString returns a string value of ID
@@ -139,12 +139,10 @@ func (store *Store) IsInitialized() bool {
 func (store *Store) GetStats() (stats *DatabaseStats) {
 	completed, _ := store.CountPackages(true)
 	packages, _ := store.GetItemCount(&PackageStore{})
-	files, _ := store.GetItemCount(&PackageDistStore{})
 
 	stats = &DatabaseStats{
 		Packages:  packages,
 		Completed: completed,
-		Files:     files,
 	}
 
 	return
@@ -216,7 +214,7 @@ func (store *Store) GetIncompletePackages() (packages []*Package) {
 
 func (store *Store) GetRevision(id string) string {
 	var item PackageStore
-	notFound := store.db.Where(&PackageStore{ID: []byte(id)}).First(&item).RecordNotFound()
+	notFound := store.db.Select("revision").Where(&PackageStore{ID: []byte(id)}).First(&item).RecordNotFound()
 
 	if !notFound {
 		return item.Revision
@@ -225,12 +223,13 @@ func (store *Store) GetRevision(id string) string {
 	return ""
 }
 
-func (store *Store) GetDocument(id string, withfiles bool) (document string, files []*PackageDistStore, err error) {
+func (store *Store) GetDocument(id string, withfiles bool) (document string, dists []*PackageDistStore, err error) {
 	var item PackageStore
-	query := store.db.Where(&PackageStore{ID: []byte(id)}).First(&item)
+	query := store.db.Where(&PackageStore{ID: []byte(id)})
 	if withfiles {
-		query = query.Preload("PackageDistStore")
+		query = query.Preload("Dists")
 	}
+	query = query.First(&item)
 
 	if ok := !query.RecordNotFound(); !ok {
 		err = errors.New("Package does not exist")
@@ -239,6 +238,7 @@ func (store *Store) GetDocument(id string, withfiles bool) (document string, fil
 
 	document = item.Document
 	if withfiles {
+		dists = item.Dists
 	}
 
 	if document == "" && !item.Completed {
