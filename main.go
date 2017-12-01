@@ -39,7 +39,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		cli.StringFlag{Name: "config, c", Value: "config.toml"},
 		cli.BoolFlag{Name: "verbose"},
-		cli.BoolFlag{Name: "profile, p", Usage: "activate pprof on port 18080 for profiling goroutines"},
+		cli.StringFlag{Name: "pprof", Usage: "Start pprof profiler on this host:port", Value: ""},
 		cli.IntFlag{Name: "cpus", Value: runtime.NumCPU()},
 	}
 	app.EnableBashCompletion = true
@@ -58,9 +58,9 @@ func main() {
 			log.Debug("Increase log verbosity")
 		}
 
-		if c.GlobalBool("profile") {
-			log.Info("Starting pprof server on port 18080")
-			go http.ListenAndServe("localhost:18080", nil)
+		if addr := c.GlobalString("pprof"); addr != "" {
+			log.Info("Starting pprof server on ", addr)
+			go http.ListenAndServe(addr, nil)
 		}
 
 		cpus := c.GlobalInt("cpus")
