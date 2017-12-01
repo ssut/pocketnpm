@@ -205,7 +205,16 @@ func (store *Store) GetIncompletePackages() (packages []*Package) {
 	var item PackageStore
 	for rows.Next() {
 		store.db.ScanRows(rows, &item)
+		store.db.Model(&PackageDistStore{}).Where("package_id = ? AND downloaded = ?", item.ID, true).Find(&item.Dists)
 		pkg := NewPackage(item.IDString(), item.Revision)
+		pkg.Dists = make([]*Dist, len(item.Dists))
+		for i, dist := range item.Dists {
+			pkg.Dists[i] = &Dist{
+				URL:        dist.Path,
+				Hash:       dist.Hash,
+				Downloaded: dist.Downloaded,
+			}
+		}
 		packages = append(packages, pkg)
 	}
 

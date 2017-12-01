@@ -70,7 +70,6 @@ func (w *MirrorWorker) Start() {
 					"worker": w.ID,
 				}).Infof("Mirroring: %s", work.ID)
 				document := w.npmClient.GetDocument(work.IDString())
-				distributions := []*distribution{}
 
 				var doc DocumentResponse
 				err := ffjson.Unmarshal([]byte(document), &doc)
@@ -83,7 +82,7 @@ func (w *MirrorWorker) Start() {
 							Package:          work,
 							DocumentRevision: "",
 							Document:         document,
-							Distributions:    distributions,
+							Distributions:    nil,
 							WorkerID:         w.ID,
 							Deleted:          true,
 						}
@@ -92,12 +91,30 @@ func (w *MirrorWorker) Start() {
 				}
 
 				// find possible urls
-				distributions = getDistributions(document)
+				possibles := getDistributions(document)
+				existsCount := 0
+				// filter
+				distributions := []*distribution{}
+				for _, possible := range possibles {
+					exists := false
+					for _, dist := range work.Dists {
+						if dist.Downloaded && possible.Tarball == dist.URL && possible.SHA1 == dist.Hash {
+							existsCount++
+							exists = true
+							break
+						}
+					}
+
+					if !exists {
+						distributions = append(distributions, possible)
+					}
+				}
 
 				// download all files here
 				log.WithFields(logrus.Fields{
 					"name":   work.IDString(),
 					"worker": w.ID,
+					"exists": existsCount,
 				}).Debugf("Total files to download: %d", len(distributions))
 
 				for _, dist := range distributions {

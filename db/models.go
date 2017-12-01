@@ -17,6 +17,7 @@ type DatabaseStats struct {
 type Package struct {
 	ID       []byte
 	Revision string
+	Dists    []*Dist
 }
 
 type Dist struct {

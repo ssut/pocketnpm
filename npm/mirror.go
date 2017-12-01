@@ -95,6 +95,7 @@ func (c *MirrorClient) FirstRun() {
 func (c *MirrorClient) Start() {
 	// Load all packages with its revision
 	packages := c.store.GetIncompletePackages()
+	count := len(packages)
 
 	log.Debugf("Packages to queue: %d", len(packages))
 
@@ -117,6 +118,7 @@ func (c *MirrorClient) Start() {
 
 	// Result handler
 	go func(wg *sync.WaitGroup) {
+		left := count
 		for {
 			result, done := <-resultQueue
 			if !done {
@@ -153,15 +155,17 @@ func (c *MirrorClient) Start() {
 				succeed = c.store.AddCompletedPackage(nil, result.Package, result.Document, result.DocumentRevision, dists)
 			}
 
+			left--
 			wg.Done()
 			if succeed {
 				log.WithFields(logrus.Fields{
-					"sameRev": result.Package.Revision == result.DocumentRevision,
-					"files":   len(result.Distributions),
-					"worker":  result.WorkerID,
+					"sameRev":    result.Package.Revision == result.DocumentRevision,
+					"downloaded": len(result.Distributions),
+					"worker":     result.WorkerID,
+					"left":       left,
 				}).Infof("Mirrored: %s", result.Package.ID)
 			} else {
-				log.Errorf("Failed to mirror: %s", result.Package.ID)
+				log.WithFields(logrus.Fields{"left": left}).Errorf("Failed to mirror: %s", result.Package.ID)
 			}
 		}
 	}(&wg)
@@ -169,14 +173,15 @@ func (c *MirrorClient) Start() {
 	// Start dispatcher
 	go func() {
 		for {
-			select {
-			case work := <-workQueue:
-				// here we received a work request
-				// goroutine won't be created until the acquired worker is released
-				worker := <-workerQueue
-				// dispatch work request
-				worker <- work
+			work, ok := <-workQueue
+			if !ok {
+				return
 			}
+			// here we received a work request
+			// goroutine won't be created until the acquired worker is released
+			worker := <-workerQueue
+			// dispatch work request
+			worker <- work
 		}
 	}()
 
@@ -190,6 +195,9 @@ func (c *MirrorClient) Start() {
 	// Wait for jobs to be finished
 	wg.Wait()
 
+	// Close dispatcher queue
+	close(workQueue)
+
 	// Wait for all workers complete
 	log.Debugf("Stopping %d workers", len(workers))
 	for _, worker := range workers {
@@ -197,6 +205,11 @@ func (c *MirrorClient) Start() {
 		worker.Stop()
 	}
 	wg.Wait()
+
+	// Close all queues
+	close(workerQueue)
+	close(resultQueue)
+
 	log.Info("Done")
 }
 
@@ -303,7 +316,7 @@ func (c *MirrorClient) Run(onetime bool) {
 		log.WithFields(logrus.Fields{
 			"sequence": seq,
 			"marked":   markedCount,
-		}).Info("Continue")
+		}).Info("Continue mirroring")
 		c.Start()
 	}
 
@@ -318,9 +331,6 @@ func (c *MirrorClient) Run(onetime bool) {
 			"sequence": seq,
 			"marked":   markedCount,
 		}).Info("State marked as run for updates")
-		go c.Update()
+		c.Update()
 	}
-
-	exit := make(chan struct{}, 1)
-	<-exit
 }
