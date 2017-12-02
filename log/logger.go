@@ -10,6 +10,7 @@ var logger = logrus.New()
 // InitLogger initializes existing Logger instance
 func InitLogger() {
 	formatter := new(prefixed.TextFormatter)
+	formatter.FullTimestamp = true
 	logger.Formatter = formatter
 }
 
