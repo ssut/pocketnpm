@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/briandowns/spinner"
 	"github.com/sirupsen/logrus"
 	"github.com/ssut/pocketnpm/db"
 	"github.com/ssut/pocketnpm/log"
@@ -105,7 +106,7 @@ func (c *MirrorClient) Start() {
 	// workQueue has a buffer size of 100
 	var workQueue = make(chan *db.Package, 100)
 	var workerQueue = make(chan chan *db.Package, c.config.MaxConnections)
-	var resultQueue = make(chan *MirrorWorkResult)
+	var resultQueue = make(chan *MirrorWorkResult, 100)
 	// WaitGroup
 	var wg sync.WaitGroup
 
@@ -120,9 +121,8 @@ func (c *MirrorClient) Start() {
 	go func(wg *sync.WaitGroup) {
 		left := count
 		for {
-			result, done := <-resultQueue
-			if !done {
-				wg.Done()
+			result, ok := <-resultQueue
+			if !ok {
 				return
 			}
 
@@ -186,11 +186,11 @@ func (c *MirrorClient) Start() {
 	}()
 
 	// Dispatch all packages
+	wg.Add(count)
 	for _, pkg := range packages {
-		wg.Add(1)
 		workQueue <- pkg
 	}
-	log.Debug("Successfully dispatched all queues")
+	log.WithFields(logrus.Fields{"count": count}).Debug("Successfully dispatched all queues")
 
 	// Wait for jobs to be finished
 	wg.Wait()
@@ -200,10 +200,11 @@ func (c *MirrorClient) Start() {
 
 	// Wait for all workers complete
 	log.Debugf("Stopping %d workers", len(workers))
+	wg.Add(len(workers))
 	for _, worker := range workers {
-		wg.Add(1)
 		worker.Stop()
 	}
+
 	wg.Wait()
 
 	// Close all queues
@@ -214,8 +215,20 @@ func (c *MirrorClient) Start() {
 }
 
 func (c *MirrorClient) Update() {
+	first := true
+	spin := spinner.New(spinner.CharSets[13], 100*time.Millisecond)
 	interval := time.Duration(c.config.Interval) * time.Second
+
 	for {
+		if !first {
+			log.Infof("Update: waiting for next tick (%d sec)", c.config.Interval)
+			spin.Start()
+			time.Sleep(interval)
+			spin.Stop()
+		} else {
+			first = false
+		}
+
 		// Load changes
 		since, _ := c.store.GetSequence()
 		changes, err := c.npmClient.GetChangesSince(since)
@@ -226,7 +239,6 @@ func (c *MirrorClient) Update() {
 
 		if since == changes.LastSequence {
 			log.Info("Update: currently up to date. no packages will be updated")
-			time.Sleep(interval)
 			continue
 		}
 
@@ -268,8 +280,6 @@ func (c *MirrorClient) Update() {
 
 		c.Start()
 		log.Info("Update: finish")
-		log.Infof("Update: waiting for next tick (%d sec)", c.config.Interval)
-		time.Sleep(interval)
 	}
 }
 
