@@ -87,6 +87,8 @@ func (m *Migrator) NeedsUpgrade(version int) bool {
 func (m *Migrator) Run() error {
 	migrations := []*Migration{}
 	version := m.Version()
+	firstRun := version == 0
+
 	if m.NeedsUpgrade(version) {
 		plans := m.Plan()
 		if plans[len(plans)-1].ID > DBVERSION {
@@ -94,6 +96,11 @@ func (m *Migrator) Run() error {
 		}
 
 		for _, migration := range plans {
+			// the first migration will generate complete schema
+			if firstRun && migration.ID > 1 {
+				break
+			}
+
 			if migration.ID > version && migration.ID <= DBVERSION {
 				migrations = append(migrations, migration)
 			}
@@ -105,7 +112,11 @@ func (m *Migrator) Run() error {
 	for i, migration := range migrations {
 		tx := m.db.Begin()
 		migration.Up(tx)
-		m.SetVersion(tx, migration.ID)
+		nextVersion := migration.ID
+		if firstRun && count == 1 {
+			nextVersion = DBVERSION
+		}
+		m.SetVersion(tx, nextVersion)
 		err := tx.Commit().Error
 		if err != nil {
 			log.Errorf("%d of %d: %s ... %v", i+1, count, migration.Description, err)
